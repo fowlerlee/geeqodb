@@ -1,0 +1,4 @@
+# zig resources
+.zig-cache
+benchmark_data
+zig-out
