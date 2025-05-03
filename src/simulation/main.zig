@@ -10,6 +10,8 @@ pub const Simulation = @import("simulation.zig").Simulation;
 pub const scenarios = struct {
     pub const viewstamped_replication = @import("scenarios/viewstamped_replication.zig");
     pub const database_integration = @import("scenarios/database_integration.zig");
+    pub const advanced_database_scenarios = @import("scenarios/advanced_database_scenarios.zig");
+    pub const advanced_database_scenarios_part2 = @import("scenarios/advanced_database_scenarios_part2.zig");
 };
 
 // Import tests

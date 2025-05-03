@@ -3,6 +3,8 @@ const simulation = @import("simulation");
 const Simulation = simulation.Simulation;
 const vr_scenario = simulation.scenarios.viewstamped_replication;
 const db_scenario = simulation.scenarios.database_integration;
+const advanced_db_scenario = simulation.scenarios.advanced_database_scenarios;
+const advanced_db_scenario2 = simulation.scenarios.advanced_database_scenarios_part2;
 
 pub fn main() !void {
     // Initialize allocator
@@ -72,6 +74,16 @@ fn printUsage() void {
         \\  vr_network_partition   Viewstamped Replication with network partition
         \\  vr_node_failure        Viewstamped Replication with node failure
         \\  db_integration         Database integration with simulated disk I/O
+        \\  db_concurrent_access   Test database with multiple clients accessing simultaneously
+        \\  db_network_partition   Test database with network partitions
+        \\  db_crash_recovery      Test database recovery after crashes
+        \\  db_clock_drift         Test database with clock drift between nodes
+        \\  db_slow_io             Test database with extremely slow disk operations
+        \\  db_partial_write       Test database with partial write failures
+        \\  db_cascading_failure   Test database with cascading component failures
+        \\  db_memory_pressure     Test database under memory constraints
+        \\  db_byzantine           Test database with Byzantine failures
+        \\  db_compaction_load     Test database compaction during heavy load
         \\
         \\Example:
         \\  run_simulation_tests --scenario vr_basic --seed 123
@@ -96,6 +108,26 @@ fn runScenario(allocator: std.mem.Allocator, name: []const u8, seed: u64, verbos
         return error.ScenarioNotImplemented;
     } else if (std.mem.eql(u8, name, "db_integration")) {
         try db_scenario.runDatabaseIntegrationScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_concurrent_access")) {
+        try advanced_db_scenario.runConcurrentAccessScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_network_partition")) {
+        try advanced_db_scenario.runNetworkPartitionScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_crash_recovery")) {
+        try advanced_db_scenario.runCrashRecoveryScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_clock_drift")) {
+        try advanced_db_scenario.runClockDriftScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_slow_io")) {
+        try advanced_db_scenario.runSlowDiskIOScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_partial_write")) {
+        try advanced_db_scenario2.runPartialWriteFailureScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_cascading_failure")) {
+        try advanced_db_scenario2.runCascadingFailureScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_memory_pressure")) {
+        try advanced_db_scenario2.runMemoryPressureScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_byzantine")) {
+        try advanced_db_scenario2.runByzantineFailureScenario(allocator);
+    } else if (std.mem.eql(u8, name, "db_compaction_load")) {
+        try advanced_db_scenario2.runCompactionDuringLoadScenario(allocator);
     } else {
         std.debug.print("Unknown scenario: {s}\n", .{name});
         return error.UnknownScenario;
@@ -121,7 +153,13 @@ fn runAllScenarios(allocator: std.mem.Allocator, seed: u64, verbose: bool) !void
     try db_scenario.runDatabaseIntegrationScenario(allocator);
     std.debug.print("=== Scenario completed successfully: db_integration ===\n", .{});
 
-    // Add more scenarios here as they are implemented
+    // Run advanced database scenarios (part 1)
+    std.debug.print("\n=== Running advanced database scenarios (part 1) ===\n", .{});
+    try advanced_db_scenario.runAllAdvancedScenarios(allocator);
+
+    // Run advanced database scenarios (part 2)
+    std.debug.print("\n=== Running advanced database scenarios (part 2) ===\n", .{});
+    try advanced_db_scenario2.runAllAdvancedScenariosPart2(allocator);
 
     std.debug.print("\nAll scenarios completed successfully!\n", .{});
 }
