@@ -28,12 +28,17 @@ pub const DatabaseServer = struct {
         // Bind to address
         try std.posix.bind(sockfd, &address.any, address.getOsSockLen());
 
+        // Get the actual bound address (important when port is 0)
+        var actual_address = address;
+        var addr_len = actual_address.getOsSockLen();
+        try std.posix.getsockname(sockfd, &actual_address.any, &addr_len);
+
         // Listen for connections
         try std.posix.listen(sockfd, 128);
 
         // Create server
         const server = std.net.Server{
-            .listen_address = address,
+            .listen_address = actual_address,
             .stream = .{ .handle = sockfd },
         };
 
@@ -43,7 +48,7 @@ pub const DatabaseServer = struct {
             .allocator = allocator,
             .db = db,
             .server = server,
-            .address = address,
+            .address = actual_address,
             .is_running = false,
             .thread = null,
         };
