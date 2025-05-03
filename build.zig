@@ -112,6 +112,8 @@ pub fn build(b: *std.Build) void {
     // Tool executables
     const tool_files = [_][]const u8{
         "src/tools/sql_client.zig",
+        "scripts/seed_database.zig",
+        "scripts/test_database.zig",
     };
 
     const tool_step = b.step("tools", "Build tool executables");
