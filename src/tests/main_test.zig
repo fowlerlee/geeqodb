@@ -27,3 +27,7 @@ test "Query Result Tests" {
 test "Transaction Manager Tests" {
     _ = @import("transaction/manager_test.zig");
 }
+
+test "Server Tests" {
+    _ = @import("server/server_test.zig");
+}

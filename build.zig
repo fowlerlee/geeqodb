@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) void {
         "src/tests/query/executor_test.zig",
         "src/tests/query/result_test.zig",
         "src/tests/transaction/manager_test.zig",
+        "src/tests/server/server_test.zig",
     };
 
     const component_test_step = b.step("test-components", "Run component tests");
@@ -72,6 +73,83 @@ pub fn build(b: *std.Build) void {
         "src/benchmarks/transaction_benchmark.zig",
         "src/benchmarks/query_benchmark.zig",
     };
+
+    // Example executables
+    const example_files = [_][]const u8{
+        "src/examples/sql_client_example.zig",
+    };
+
+    const example_step = b.step("examples", "Build example executables");
+
+    for (example_files) |example_file| {
+        const example_name = std.fs.path.stem(example_file);
+
+        const example_exe = b.addExecutable(.{
+            .name = example_name,
+            .root_source_file = b.path(example_file),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        // Add the main source file as a module to the example
+        example_exe.root_module.addImport("geeqodb", geeqodb_module);
+
+        b.installArtifact(example_exe);
+
+        const run_example = b.addRunArtifact(example_exe);
+        run_example.step.dependOn(b.getInstallStep());
+
+        // Create individual example steps
+        const step_name = std.fmt.allocPrint(b.allocator, "run-{s}", .{example_name}) catch unreachable;
+        const step_desc = std.fmt.allocPrint(b.allocator, "Run {s} example", .{example_name}) catch unreachable;
+        const run_single_example = b.step(step_name, step_desc);
+        run_single_example.dependOn(&run_example.step);
+
+        // Add to the main example step
+        example_step.dependOn(&run_example.step);
+    }
+
+    // Tool executables
+    const tool_files = [_][]const u8{
+        "src/tools/sql_client.zig",
+    };
+
+    const tool_step = b.step("tools", "Build tool executables");
+
+    for (tool_files) |tool_file| {
+        const tool_name = std.fs.path.stem(tool_file);
+
+        const tool_exe = b.addExecutable(.{
+            .name = tool_name,
+            .root_source_file = b.path(tool_file),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        // Add the main source file as a module to the tool
+        tool_exe.root_module.addImport("geeqodb", geeqodb_module);
+
+        b.installArtifact(tool_exe);
+
+        // Add to the main tool step
+        tool_step.dependOn(b.getInstallStep());
+    }
+
+    // Main executable
+    const exe = b.addExecutable(.{
+        .name = "geeqodb",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    b.installArtifact(exe);
+
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.step.dependOn(b.getInstallStep());
+
+    const run_step = b.step("run", "Run the database server");
+    run_step.dependOn(&run_cmd.step);
 
     const benchmark_step = b.step("benchmark", "Run all benchmarks");
 
