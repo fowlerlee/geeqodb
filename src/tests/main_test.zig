@@ -39,3 +39,7 @@ test "Server Tests" {
 test "Replication Tests" {
     _ = @import("replication/vr_test.zig");
 }
+
+test "Backup and Recovery Tests" {
+    _ = @import("storage/backup_recovery_test.zig");
+}
