@@ -2,7 +2,9 @@
 
 A high-performance OLAP database in Zig with SQL support.
 
-<img src="./artwork/geeqodb.jpg" alt="Alternative text" width="400" height="500">
+<div style="display: flex; justify-content: center;">
+<img src="./artwork/geeqodb.jpg"  alt="Alternative text" width="400" height="500">
+</div>
 
 ## Features
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const RocksDB = @import("../storage/rocksdb.zig").RocksDB;
+const c = @import("../storage/rocksdb_c.zig");
 const WAL = @import("../storage/wal.zig").WAL;
 const QueryPlanner = @import("../query/planner.zig").QueryPlanner;
 const QueryExecutor = @import("../query/executor.zig").QueryExecutor;
@@ -69,12 +70,8 @@ pub const OLAPDatabase = struct {
 
     /// Get the current WAL position
     pub fn getWALPosition(self: *OLAPDatabase) !u64 {
-        // In a real implementation, this would return the current WAL position
-        // Suppress unused parameter warning
-        if (false) {
-            _ = self;
-        }
-        return 0;
+        // Get the current WAL position from the WAL subsystem
+        return try self.wal.getCurrentPosition();
     }
 
     /// Create a backup of the database
@@ -87,14 +84,44 @@ pub const OLAPDatabase = struct {
             return err;
         };
 
-        // In a real implementation, this would create a backup of the database
-        // For now, we just create an empty file to simulate a backup
+        // Create a backup using RocksDB's backup engine
+        var err_ptr: ?[*]u8 = null;
+
+        // Create a backup options object
+        const backup_options = c.rocksdb_backup_engine_options_create(backup_dir.ptr);
+        defer c.rocksdb_backup_engine_options_destroy(backup_options);
+
+        // Create the backup engine
+        const backup_engine = c.rocksdb_backup_engine_open(self.storage.options, backup_options, &err_ptr);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to open backup engine: {s}", .{err_msg});
+            return error.RocksDBBackupEngineFailed;
+        }
+        defer c.rocksdb_backup_engine_close(backup_engine);
+
+        // Create the backup
+        c.rocksdb_backup_engine_create_new_backup(backup_engine, self.storage.db, &err_ptr);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to create backup: {s}", .{err_msg});
+            return error.RocksDBBackupFailed;
+        }
+
+        // Also save WAL position for point-in-time recovery
+        const wal_position = try self.wal.getCurrentPosition();
         const metadata_path = try std.fs.path.join(self.allocator, &[_][]const u8{ backup_dir, "metadata.json" });
         defer self.allocator.free(metadata_path);
 
         var file = try std.fs.cwd().createFile(metadata_path, .{});
         defer file.close();
-        try file.writeAll("{}");
+
+        // Write the WAL position to the metadata file
+        const metadata = try std.fmt.allocPrint(self.allocator, "{{\"wal_position\": {}}}", .{wal_position});
+        defer self.allocator.free(metadata);
+        try file.writeAll(metadata);
     }
 
     /// Create an incremental backup of the database
