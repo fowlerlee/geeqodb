@@ -233,6 +233,69 @@ pub fn build(b: *std.Build) void {
     const vr_test_step = b.step("test-vr", "Run VR test");
     vr_test_step.dependOn(&run_vr_test.step);
 
+    // VR unit tests
+    const vr_unit_tests = b.addTest(.{
+        .name = "vr_unit_tests",
+        .root_source_file = b.path("src/simulation/scenarios/vr_unit_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vr_unit_tests.root_module.addImport("simulation", simulation_module);
+
+    const run_vr_unit_tests = b.addRunArtifact(vr_unit_tests);
+
+    const vr_unit_tests_step = b.step("test-vr-unit", "Run VR unit tests");
+    vr_unit_tests_step.dependOn(&run_vr_unit_tests.step);
+
+    // VR replication tests
+    const vr_replication_tests = b.addTest(.{
+        .name = "vr_replication_tests",
+        .root_source_file = b.path("src/simulation/scenarios/vr_replication_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vr_replication_tests.root_module.addImport("simulation", simulation_module);
+
+    const run_vr_replication_tests = b.addRunArtifact(vr_replication_tests);
+
+    const vr_replication_tests_step = b.step("test-vr-replication", "Run VR replication tests");
+    vr_replication_tests_step.dependOn(&run_vr_replication_tests.step);
+
+    // VR view change tests
+    const vr_view_change_tests = b.addTest(.{
+        .name = "vr_view_change_tests",
+        .root_source_file = b.path("src/simulation/scenarios/vr_view_change_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vr_view_change_tests.root_module.addImport("simulation", simulation_module);
+
+    const run_vr_view_change_tests = b.addRunArtifact(vr_view_change_tests);
+
+    const vr_view_change_tests_step = b.step("test-vr-view-change", "Run VR view change tests");
+    vr_view_change_tests_step.dependOn(&run_vr_view_change_tests.step);
+
+    // VR edge case tests
+    const vr_edge_case_tests = b.addTest(.{
+        .name = "vr_edge_case_tests",
+        .root_source_file = b.path("src/simulation/scenarios/vr_edge_case_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vr_edge_case_tests.root_module.addImport("simulation", simulation_module);
+
+    const run_vr_edge_case_tests = b.addRunArtifact(vr_edge_case_tests);
+
+    const vr_edge_case_tests_step = b.step("test-vr-edge-case", "Run VR edge case tests");
+    vr_edge_case_tests_step.dependOn(&run_vr_edge_case_tests.step);
+
+    // Combined VR test step
+    const vr_all_tests_step = b.step("test-vr-all", "Run all VR tests");
+    vr_all_tests_step.dependOn(&run_vr_unit_tests.step);
+    vr_all_tests_step.dependOn(&run_vr_replication_tests.step);
+    vr_all_tests_step.dependOn(&run_vr_view_change_tests.step);
+    vr_all_tests_step.dependOn(&run_vr_edge_case_tests.step);
+
     // Test steps
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_main_tests.step);
