@@ -217,10 +217,13 @@ pub fn build(b: *std.Build) void {
     // VR test executable
     const vr_test_exe = b.addExecutable(.{
         .name = "vr_test",
-        .root_source_file = b.path("src/simulation/scenarios/simple_vr_test.zig"),
+        .root_source_file = b.path("src/simulation/scenarios/vr_test.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    // Add the simulation module to the VR test
+    vr_test_exe.root_module.addImport("simulation", simulation_module);
 
     b.installArtifact(vr_test_exe);
 
