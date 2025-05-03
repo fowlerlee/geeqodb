@@ -5,7 +5,8 @@ const planner = geeqodb.query.planner;
 const QueryPlanner = planner.QueryPlanner;
 const AST = planner.AST;
 const LogicalPlan = planner.LogicalPlan;
-const PhysicalPlan = planner.PhysicalPlan;
+const Index = geeqodb.storage.index.Index;
+const AccessMethod = geeqodb.query.planner.AccessMethod;
 
 test "QueryPlanner initialization" {
     const allocator = testing.allocator;
@@ -52,48 +53,43 @@ test "QueryPlanner plan" {
     try testing.expectEqual(allocator, logical_plan.allocator);
 }
 
-test "QueryPlanner optimize" {
-    const allocator = testing.allocator;
-
-    // Initialize QueryPlanner
-    const query_planner = try QueryPlanner.init(allocator);
+test "Query planner basic functionality" {
+    const allocator = std.testing.allocator;
+    var query_planner = try QueryPlanner.init(allocator);
     defer query_planner.deinit();
 
-    // Parse a SQL query
-    const ast = try query_planner.parse("SELECT * FROM test");
+    // Test empty query
+    try std.testing.expectError(error.EmptyQuery, query_planner.parse(""));
+
+    // Test simple query
+    const ast = try query_planner.parse("SELECT * FROM users");
     defer ast.deinit();
 
-    // Plan the query
-    const logical_plan = try query_planner.plan(ast);
-    defer logical_plan.deinit();
+    // Test plan generation
+    const plan = try query_planner.plan(ast);
+    defer plan.deinit();
 
-    // Optimize the plan
-    const physical_plan = try query_planner.optimize(logical_plan);
-    defer physical_plan.deinit();
-
-    // Verify that PhysicalPlan was created correctly
-    try testing.expectEqual(allocator, physical_plan.allocator);
+    // Verify plan structure
+    try std.testing.expectEqual(plan.node_type, .Scan);
 }
 
-test "QueryPlanner end-to-end" {
-    const allocator = testing.allocator;
-
-    // Initialize QueryPlanner
-    const query_planner = try QueryPlanner.init(allocator);
+test "Query planner index selection" {
+    const allocator = std.testing.allocator;
+    var query_planner = try QueryPlanner.init(allocator);
     defer query_planner.deinit();
 
-    // Parse a SQL query
-    const ast = try query_planner.parse("SELECT * FROM test WHERE id = 1");
-    defer ast.deinit();
+    // Add test indexes
+    try query_planner.addIndex("users", "id", .BTree);
+    try query_planner.addIndex("users", "email", .SkipList);
 
-    // Plan the query
-    const logical_plan = try query_planner.plan(ast);
-    defer logical_plan.deinit();
+    // Test index lookup
+    const indexes = try query_planner.findIndexesForColumn("users", "id");
+    defer allocator.free(indexes);
 
-    // Optimize the plan
-    const physical_plan = try query_planner.optimize(logical_plan);
-    defer physical_plan.deinit();
+    try std.testing.expectEqual(@as(usize, 1), indexes.len);
+    try std.testing.expectEqual(indexes[0].index_type, .BTree);
 
-    // Verify that PhysicalPlan was created correctly
-    try testing.expectEqual(allocator, physical_plan.allocator);
+    // Test access method selection
+    try std.testing.expectEqual(AccessMethod.IndexSeek, try query_planner.findBestAccessMethod("users", "id"));
+    try std.testing.expectEqual(AccessMethod.TableScan, try query_planner.findBestAccessMethod("users", "name"));
 }

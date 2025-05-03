@@ -4,3 +4,4 @@ benchmark_data
 zig-out
 .vscode
 test_*
+deps
