@@ -32,6 +32,14 @@ test "Transaction Manager Tests" {
     _ = @import("transaction/manager_test.zig");
 }
 
+test "Transaction Isolation Tests" {
+    _ = @import("transaction/isolation_test.zig");
+}
+
+test "Transaction Concurrency Control Tests" {
+    _ = @import("transaction/concurrency_control_test.zig");
+}
+
 test "Server Tests" {
     _ = @import("server/server_test.zig");
 }

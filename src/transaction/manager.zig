@@ -8,10 +8,19 @@ pub const TransactionStatus = enum {
     Aborted,
 };
 
+/// Transaction isolation level
+pub const IsolationLevel = enum {
+    ReadUncommitted, // Allows dirty reads, non-repeatable reads, and phantom reads
+    ReadCommitted, // Prevents dirty reads, but allows non-repeatable reads and phantom reads
+    RepeatableRead, // Prevents dirty reads and non-repeatable reads, but allows phantom reads
+    Serializable, // Prevents dirty reads, non-repeatable reads, and phantom reads
+};
+
 /// Transaction for managing database operations
 pub const Transaction = struct {
     id: u64,
     status: TransactionStatus,
+    isolation_level: IsolationLevel,
     start_time: i64,
     commit_time: ?i64,
 
@@ -71,6 +80,11 @@ pub const TransactionManager = struct {
 
     /// Begin a new transaction
     pub fn beginTransaction(self: *TransactionManager) !*Transaction {
+        return try self.beginTransactionWithIsolationLevel(.ReadCommitted);
+    }
+
+    /// Begin a new transaction with a specific isolation level
+    pub fn beginTransactionWithIsolationLevel(self: *TransactionManager, isolation_level: IsolationLevel) !*Transaction {
         const txn_id = self.next_txn_id;
         self.next_txn_id += 1;
 
@@ -78,6 +92,7 @@ pub const TransactionManager = struct {
         txn.* = Transaction{
             .id = txn_id,
             .status = .Active,
+            .isolation_level = isolation_level,
             .start_time = std.time.milliTimestamp(),
             .commit_time = null,
         };
