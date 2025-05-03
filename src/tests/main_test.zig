@@ -35,3 +35,7 @@ test "Transaction Manager Tests" {
 test "Server Tests" {
     _ = @import("server/server_test.zig");
 }
+
+test "Replication Tests" {
+    _ = @import("replication/vr_test.zig");
+}

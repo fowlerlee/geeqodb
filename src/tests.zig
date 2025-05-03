@@ -25,6 +25,7 @@ pub const tests = struct {
     pub const query_executor = @import("tests/query/executor_test.zig");
     pub const query_result = @import("tests/query/result_test.zig");
     pub const transaction_manager = @import("tests/transaction/manager_test.zig");
+    pub const replication_vr = @import("tests/replication/vr_test.zig");
 };
 
 test {
