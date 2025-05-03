@@ -3,3 +3,4 @@
 benchmark_data
 zig-out
 .vscode
+test_*
