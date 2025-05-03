@@ -219,7 +219,17 @@ test "Database recovery after crash" {
             var recovered_db = try database.recoverDatabase(allocator, dir);
             defer recovered_db.deinit();
 
-            // In a real implementation, we would verify that the database state is consistent
+            // Verify that the database state is consistent after recovery
+            var result_set = try recovered_db.execute("SELECT * FROM test");
+            defer result_set.deinit();
+            
+            // Check that the table exists and has the correct structure
+            try std.testing.expectEqual(@as(usize, 1), result_set.columns.len);
+            try std.testing.expectEqual(@as([]const u8, "id"), result_set.columns[0].name);
+            
+            // Check that the data was recovered correctly
+            try std.testing.expectEqual(@as(usize, 1), result_set.row_count);
+            try std.testing.expectEqual(@as(i32, 1), result_set.rows[0].values[0].Integer);
         }
     }.callback);
 }
