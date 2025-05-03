@@ -2,6 +2,8 @@
 
 A high-performance OLAP database in Zig with SQL support.
 
+<img src="./artwork/geeqodb.jpg" alt="Alternative text" width="400" height="500">
+
 ## Features
 
 - TCP server listening on port 5252

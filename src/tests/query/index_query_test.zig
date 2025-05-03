@@ -5,6 +5,7 @@ const database = geeqodb.core;
 const OLAPDatabase = database.OLAPDatabase;
 const BTreeMapIndex = geeqodb.storage.btree_index.BTreeMapIndex;
 const SkipListIndex = geeqodb.storage.skiplist_index.SkipListIndex;
+const DatabaseContext = geeqodb.query.executor.DatabaseContext;
 
 // Helper function to create a test database with some data
 fn createTestDatabase(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {

@@ -3,6 +3,7 @@ const RocksDB = @import("../storage/rocksdb.zig").RocksDB;
 const WAL = @import("../storage/wal.zig").WAL;
 const QueryPlanner = @import("../query/planner.zig").QueryPlanner;
 const QueryExecutor = @import("../query/executor.zig").QueryExecutor;
+const DatabaseContext = @import("../query/executor.zig").DatabaseContext;
 const transaction_manager = @import("../transaction/manager.zig");
 const TransactionManager = transaction_manager.TransactionManager;
 const Transaction = transaction_manager.Transaction;
@@ -16,6 +17,7 @@ pub const OLAPDatabase = struct {
     wal: *WAL,
     query_planner: *QueryPlanner,
     txn_manager: *TransactionManager,
+    db_context: *DatabaseContext,
 
     /// Execute a SQL query and return a result set
     pub fn execute(self: *OLAPDatabase, query: []const u8) !ResultSet {
@@ -31,7 +33,7 @@ pub const OLAPDatabase = struct {
         const physical_plan = try self.query_planner.optimize(plan);
         defer physical_plan.deinit();
 
-        return try QueryExecutor.execute(self.allocator, physical_plan);
+        return try QueryExecutor.execute(self.allocator, physical_plan, self.db_context);
     }
 
     /// Deinitialize the database
@@ -40,6 +42,7 @@ pub const OLAPDatabase = struct {
         self.wal.deinit();
         self.query_planner.deinit();
         self.txn_manager.deinit();
+        self.db_context.deinit();
         self.allocator.destroy(self);
     }
 
@@ -233,6 +236,7 @@ pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
     db.wal = try WAL.init(allocator, data_dir);
     db.query_planner = try QueryPlanner.init(allocator);
     db.txn_manager = try TransactionManager.init(allocator);
+    db.db_context = try DatabaseContext.init(allocator);
 
     return db;
 }
@@ -258,4 +262,5 @@ test "OLAPDatabase initialization" {
     try std.testing.expect(@intFromPtr(db.wal) != 0);
     try std.testing.expect(@intFromPtr(db.query_planner) != 0);
     try std.testing.expect(@intFromPtr(db.txn_manager) != 0);
+    try std.testing.expect(@intFromPtr(db.db_context) != 0);
 }
