@@ -59,3 +59,7 @@ test "Replication Tests" {
 test "Backup and Recovery Tests" {
     _ = @import("storage/backup_recovery_test.zig");
 }
+
+test "Integration Tests - Index Performance" {
+    _ = @import("integration/index_performance_test.zig");
+}

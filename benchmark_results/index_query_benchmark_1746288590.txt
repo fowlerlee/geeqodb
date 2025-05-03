@@ -1,0 +1,7 @@
+# GeeqoDB Index Performance Benchmark Results
+
+| Query Type | Without Index (ns) | With Index (ns) | Speedup Factor |
+| --- | --- | --- | --- |
+| Point Query | 16642 | 3359 | 4.95x |
+| Range Query | 9827 | 10048 | 0.98x |
+| Join Query | 6552 | 5290 | 1.24x |

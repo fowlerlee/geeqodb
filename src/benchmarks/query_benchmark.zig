@@ -2,6 +2,7 @@ const std = @import("std");
 const geeqodb = @import("geeqodb");
 const QueryPlanner = geeqodb.query.planner.QueryPlanner;
 const QueryExecutor = geeqodb.query.executor.QueryExecutor;
+const DatabaseContext = geeqodb.query.executor.DatabaseContext;
 
 pub fn main() !void {
     // Initialize allocator
@@ -9,15 +10,19 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Create a database context
+    var db_context = try DatabaseContext.init(allocator);
+    defer db_context.deinit();
+
     // Benchmark query planning and execution
     std.debug.print("Benchmarking query planning and execution...\n", .{});
-    try benchmarkQueryPlanning(allocator);
+    try benchmarkQueryPlanning(allocator, db_context);
 
     std.debug.print("\nBenchmarks completed successfully!\n", .{});
 }
 
 /// Benchmark query planning and execution
-fn benchmarkQueryPlanning(allocator: std.mem.Allocator) !void {
+fn benchmarkQueryPlanning(allocator: std.mem.Allocator, db_context: *DatabaseContext) !void {
     // Initialize query planner
     const query_planner = try QueryPlanner.init(allocator);
     defer query_planner.deinit();
@@ -104,7 +109,7 @@ fn benchmarkQueryPlanning(allocator: std.mem.Allocator) !void {
         defer physical_plan.deinit();
 
         timer.reset();
-        var result_set = try QueryExecutor.execute(allocator, physical_plan);
+        var result_set = try QueryExecutor.execute(allocator, physical_plan, db_context);
         const elapsed = timer.read();
         total_time += elapsed;
         result_set.deinit();
@@ -125,7 +130,7 @@ fn benchmarkQueryPlanning(allocator: std.mem.Allocator) !void {
         const ast = try query_planner.parse(query);
         const logical_plan = try query_planner.plan(ast);
         const physical_plan = try query_planner.optimize(logical_plan);
-        var result_set = try QueryExecutor.execute(allocator, physical_plan);
+        var result_set = try QueryExecutor.execute(allocator, physical_plan, db_context);
         const elapsed = timer.read();
         total_time += elapsed;
 

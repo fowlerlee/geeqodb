@@ -49,6 +49,7 @@ pub fn build(b: *std.Build) void {
         "src/tests/query/index_query_test.zig",
         "src/tests/transaction/manager_test.zig",
         "src/tests/server/server_test.zig",
+        "src/tests/integration/index_performance_test.zig",
     };
 
     const component_test_step = b.step("test-components", "Run component tests");
@@ -80,6 +81,7 @@ pub fn build(b: *std.Build) void {
         "src/benchmarks/transaction_benchmark.zig",
         "src/benchmarks/query_benchmark.zig",
         "src/benchmarks/index_benchmark.zig",
+        "src/benchmarks/index_query_benchmark_fixed2.zig",
     };
 
     // Example executables
@@ -123,6 +125,7 @@ pub fn build(b: *std.Build) void {
         "scripts/seed_database.zig",
         "scripts/test_database.zig",
         "scripts/run_simulation_tests.zig",
+        "scripts/run_benchmarks.zig",
     };
 
     const tool_step = b.step("tools", "Build tool executables");
@@ -308,4 +311,23 @@ pub fn build(b: *std.Build) void {
 
     const main_test_step = b.step("test-main", "Run main tests");
     main_test_step.dependOn(&run_main_tests.step);
+
+    // Benchmark summary step
+    const benchmark_summary_exe = b.addExecutable(.{
+        .name = "run_benchmarks",
+        .root_source_file = b.path("scripts/run_benchmarks.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Add the main source file as a module to the benchmark summary
+    benchmark_summary_exe.root_module.addImport("geeqodb", geeqodb_module);
+
+    b.installArtifact(benchmark_summary_exe);
+
+    const run_benchmark_summary = b.addRunArtifact(benchmark_summary_exe);
+    run_benchmark_summary.step.dependOn(b.getInstallStep());
+
+    const benchmark_summary_step = b.step("benchmark-summary", "Run all benchmarks and generate a summary");
+    benchmark_summary_step.dependOn(&run_benchmark_summary.step);
 }
