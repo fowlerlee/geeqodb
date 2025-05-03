@@ -9,6 +9,11 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
     });
 
+    // Create the simulation module
+    const simulation_module = b.addModule("simulation", .{
+        .root_source_file = b.path("src/simulation/main.zig"),
+    });
+
     const lib = b.addStaticLibrary(.{
         .name = "geeqodb",
         .root_source_file = b.path("src/main.zig"),
@@ -114,6 +119,7 @@ pub fn build(b: *std.Build) void {
         "src/tools/sql_client.zig",
         "scripts/seed_database.zig",
         "scripts/test_database.zig",
+        "scripts/run_simulation_tests.zig",
     };
 
     const tool_step = b.step("tools", "Build tool executables");
@@ -130,6 +136,11 @@ pub fn build(b: *std.Build) void {
 
         // Add the main source file as a module to the tool
         tool_exe.root_module.addImport("geeqodb", geeqodb_module);
+
+        // Add the simulation module if this is the simulation test runner
+        if (std.mem.eql(u8, tool_name, "run_simulation_tests")) {
+            tool_exe.root_module.addImport("simulation", simulation_module);
+        }
 
         b.installArtifact(tool_exe);
 
@@ -183,10 +194,31 @@ pub fn build(b: *std.Build) void {
         benchmark_step.dependOn(&run_benchmark.step);
     }
 
+    // Simulation test executable
+    const simulation_test_exe = b.addExecutable(.{
+        .name = "run_simulation_tests",
+        .root_source_file = b.path("scripts/run_simulation_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Add the modules to the simulation test
+    simulation_test_exe.root_module.addImport("geeqodb", geeqodb_module);
+    simulation_test_exe.root_module.addImport("simulation", simulation_module);
+
+    b.installArtifact(simulation_test_exe);
+
+    const run_simulation_tests = b.addRunArtifact(simulation_test_exe);
+    run_simulation_tests.step.dependOn(b.getInstallStep());
+
+    const simulation_test_step = b.step("test-simulation", "Run simulation tests");
+    simulation_test_step.dependOn(&run_simulation_tests.step);
+
     // Test steps
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_main_tests.step);
     test_step.dependOn(component_test_step);
+    test_step.dependOn(simulation_test_step);
 
     const main_test_step = b.step("test-main", "Run main tests");
     main_test_step.dependOn(&run_main_tests.step);

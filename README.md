@@ -44,6 +44,12 @@ zig build test
 
 # Run the full test suite (starts server, seeds database, runs tests)
 ./scripts/run_full_test.sh
+
+# Run simulation tests
+zig build test-simulation
+
+# Run a specific simulation scenario
+./zig-out/bin/run_simulation_tests --scenario vr_basic
 ```
 
 ## Scripts
@@ -51,6 +57,7 @@ zig build test
 - `scripts/seed_database.zig`: Seeds the database with sample data
 - `scripts/test_database.zig`: Tests the database functionality
 - `scripts/run_full_test.sh`: Runs a full test of the database server
+- `scripts/run_simulation_tests.zig`: Runs deterministic simulation tests
 
 ## Example SQL Queries
 
