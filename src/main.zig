@@ -7,6 +7,9 @@ pub const core = @import("core/database.zig");
 pub const storage = struct {
     pub const rocksdb = @import("storage/rocksdb.zig");
     pub const wal = @import("storage/wal.zig");
+    pub const index = @import("storage/index.zig");
+    pub const btree_index = @import("storage/btree_index.zig");
+    pub const skiplist_index = @import("storage/skiplist_index.zig");
 };
 pub const query = struct {
     pub const planner = @import("query/planner.zig");

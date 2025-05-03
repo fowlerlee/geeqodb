@@ -42,9 +42,11 @@ pub fn build(b: *std.Build) void {
         "src/tests/core/database_test.zig",
         "src/tests/storage/rocksdb_test.zig",
         "src/tests/storage/wal_test.zig",
+        "src/tests/storage/index_test.zig",
         "src/tests/query/planner_test.zig",
         "src/tests/query/executor_test.zig",
         "src/tests/query/result_test.zig",
+        "src/tests/query/index_query_test.zig",
         "src/tests/transaction/manager_test.zig",
         "src/tests/server/server_test.zig",
     };
@@ -77,6 +79,7 @@ pub fn build(b: *std.Build) void {
         "src/benchmarks/storage_benchmark.zig",
         "src/benchmarks/transaction_benchmark.zig",
         "src/benchmarks/query_benchmark.zig",
+        "src/benchmarks/index_benchmark.zig",
     };
 
     // Example executables

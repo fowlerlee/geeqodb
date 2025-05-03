@@ -12,6 +12,10 @@ test "Storage WAL Tests" {
     _ = @import("storage/wal_test.zig");
 }
 
+test "Storage Index Tests" {
+    _ = @import("storage/index_test.zig");
+}
+
 test "Query Planner Tests" {
     _ = @import("query/planner_test.zig");
 }
@@ -26,6 +30,10 @@ test "Query Executor Tests" {
 
 test "Query Result Tests" {
     _ = @import("query/result_test.zig");
+}
+
+test "Query Index Tests" {
+    _ = @import("query/index_query_test.zig");
 }
 
 test "Transaction Manager Tests" {
