@@ -214,11 +214,28 @@ pub fn build(b: *std.Build) void {
     const simulation_test_step = b.step("test-simulation", "Run simulation tests");
     simulation_test_step.dependOn(&run_simulation_tests.step);
 
+    // VR test executable
+    const vr_test_exe = b.addExecutable(.{
+        .name = "vr_test",
+        .root_source_file = b.path("src/simulation/scenarios/simple_vr_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    b.installArtifact(vr_test_exe);
+
+    const run_vr_test = b.addRunArtifact(vr_test_exe);
+    run_vr_test.step.dependOn(b.getInstallStep());
+
+    const vr_test_step = b.step("test-vr", "Run VR test");
+    vr_test_step.dependOn(&run_vr_test.step);
+
     // Test steps
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_main_tests.step);
     test_step.dependOn(component_test_step);
     test_step.dependOn(simulation_test_step);
+    test_step.dependOn(vr_test_step);
 
     const main_test_step = b.step("test-main", "Run main tests");
     main_test_step.dependOn(&run_main_tests.step);

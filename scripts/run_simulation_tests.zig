@@ -70,9 +70,10 @@ fn printUsage() void {
         \\  --help, -h             Show this help message
         \\
         \\Available scenarios:
+        \\  vr_simplified          Simplified Viewstamped Replication scenario
         \\  vr_basic               Basic Viewstamped Replication scenario
-        \\  vr_network_partition   Viewstamped Replication with network partition
-        \\  vr_node_failure        Viewstamped Replication with node failure
+        \\  vr_view_change         Viewstamped Replication with view changes and recovery
+        \\  vr_all                 Run all Viewstamped Replication scenarios
         \\  db_integration         Database integration with simulated disk I/O
         \\  db_concurrent_access   Test database with multiple clients accessing simultaneously
         \\  db_network_partition   Test database with network partitions
@@ -100,12 +101,12 @@ fn runScenario(allocator: std.mem.Allocator, name: []const u8, seed: u64, verbos
 
     if (std.mem.eql(u8, name, "vr_basic")) {
         try vr_scenario.runBasicScenario(allocator);
-    } else if (std.mem.eql(u8, name, "vr_network_partition")) {
-        std.debug.print("Scenario not implemented yet: {s}\n", .{name});
-        return error.ScenarioNotImplemented;
-    } else if (std.mem.eql(u8, name, "vr_node_failure")) {
-        std.debug.print("Scenario not implemented yet: {s}\n", .{name});
-        return error.ScenarioNotImplemented;
+    } else if (std.mem.eql(u8, name, "vr_view_change")) {
+        try vr_scenario.runViewChangeScenario(allocator);
+    } else if (std.mem.eql(u8, name, "vr_simplified")) {
+        try vr_scenario.runSimplifiedScenario(allocator);
+    } else if (std.mem.eql(u8, name, "vr_all")) {
+        try vr_scenario.runAllVRScenarios(allocator);
     } else if (std.mem.eql(u8, name, "db_integration")) {
         try db_scenario.runDatabaseIntegrationScenario(allocator);
     } else if (std.mem.eql(u8, name, "db_concurrent_access")) {
@@ -143,10 +144,9 @@ fn runAllScenarios(allocator: std.mem.Allocator, seed: u64, verbose: bool) !void
         std.debug.print("Verbose output enabled\n", .{});
     }
 
-    // Run the basic VR scenario
-    std.debug.print("\n=== Running scenario: vr_basic ===\n", .{});
-    try vr_scenario.runBasicScenario(allocator);
-    std.debug.print("=== Scenario completed successfully: vr_basic ===\n", .{});
+    // Run all VR scenarios
+    std.debug.print("\n=== Running all Viewstamped Replication scenarios ===\n", .{});
+    try vr_scenario.runAllVRScenarios(allocator);
 
     // Run the database integration scenario
     std.debug.print("\n=== Running scenario: db_integration ===\n", .{});
