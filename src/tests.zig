@@ -21,6 +21,7 @@ pub const tests = struct {
     pub const storage_rocksdb = @import("tests/storage/rocksdb_test.zig");
     pub const storage_wal = @import("tests/storage/wal_test.zig");
     pub const query_planner = @import("tests/query/planner_test.zig");
+    pub const query_parser = @import("tests/query/parser_test.zig");
     pub const query_executor = @import("tests/query/executor_test.zig");
     pub const query_result = @import("tests/query/result_test.zig");
     pub const transaction_manager = @import("tests/transaction/manager_test.zig");

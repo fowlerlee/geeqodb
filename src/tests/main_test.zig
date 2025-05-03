@@ -16,6 +16,10 @@ test "Query Planner Tests" {
     _ = @import("query/planner_test.zig");
 }
 
+test "SQL Parser Tests" {
+    _ = @import("query/parser_test.zig");
+}
+
 test "Query Executor Tests" {
     _ = @import("query/executor_test.zig");
 }
