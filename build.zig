@@ -9,6 +9,13 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
     });
 
+    // Add CUDA wrapper
+    geeqodb_module.addIncludePath(b.path("src/gpu"));
+    geeqodb_module.addCSourceFile(.{
+        .file = b.path("src/gpu/cuda_wrapper.c"),
+        .flags = &.{"-std=c11"},
+    });
+
     // Add RocksDB dependency
     const rocksdb_lib = b.addStaticLibrary(.{
         .name = "rocksdb",
@@ -28,6 +35,21 @@ pub fn build(b: *std.Build) void {
     });
     planner_test.root_module.addImport("geeqodb", geeqodb_module);
     planner_test.linkSystemLibrary("rocksdb");
+
+    const advanced_planner_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/query/advanced_planner_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    advanced_planner_test.root_module.addImport("geeqodb", geeqodb_module);
+    advanced_planner_test.linkSystemLibrary("rocksdb");
+
+    const gpu_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/gpu/gpu_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    gpu_test.root_module.addImport("geeqodb", geeqodb_module);
 
     const rocksdb_test = b.addTest(.{
         .root_source_file = b.path("src/tests/storage/rocksdb_test.zig"),
@@ -49,6 +71,12 @@ pub fn build(b: *std.Build) void {
     const run_planner_tests = b.addRunArtifact(planner_test);
     run_planner_tests.has_side_effects = true;
 
+    const run_advanced_planner_tests = b.addRunArtifact(advanced_planner_test);
+    run_advanced_planner_tests.has_side_effects = true;
+
+    const run_gpu_tests = b.addRunArtifact(gpu_test);
+    run_gpu_tests.has_side_effects = true;
+
     const run_rocksdb_tests = b.addRunArtifact(rocksdb_test);
     run_rocksdb_tests.has_side_effects = true;
 
@@ -58,12 +86,22 @@ pub fn build(b: *std.Build) void {
     // Add test steps to the main test step
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_planner_tests.step);
+    test_step.dependOn(&run_advanced_planner_tests.step);
+    test_step.dependOn(&run_gpu_tests.step);
     test_step.dependOn(&run_rocksdb_tests.step);
     test_step.dependOn(&run_database_tests.step);
 
     // Add a separate step for database tests only
     const database_test_step = b.step("test-database", "Run database tests only");
     database_test_step.dependOn(&run_database_tests.step);
+
+    // Add a separate step for advanced planner tests only
+    const advanced_planner_test_step = b.step("test-advanced-planner", "Run advanced planner tests only");
+    advanced_planner_test_step.dependOn(&run_advanced_planner_tests.step);
+
+    // Add a separate step for GPU tests only
+    const gpu_test_step = b.step("test-gpu", "Run GPU tests only");
+    gpu_test_step.dependOn(&run_gpu_tests.step);
 
     const tools_step = b.step("tools", "Build all tools in the src/tools directory");
 
@@ -88,6 +126,18 @@ pub fn build(b: *std.Build) void {
     query_example.root_module.addImport("geeqodb", geeqodb_module);
     query_example.linkSystemLibrary("rocksdb");
     b.installArtifact(query_example);
+    tools_step.dependOn(b.getInstallStep());
+
+    // Build GPU benchmark tool
+    const gpu_benchmark = b.addExecutable(.{
+        .name = "gpu_benchmark",
+        .root_source_file = b.path("src/benchmarks/gpu_benchmark.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    gpu_benchmark.root_module.addImport("geeqodb", geeqodb_module);
+    gpu_benchmark.linkSystemLibrary("rocksdb");
+    b.installArtifact(gpu_benchmark);
     tools_step.dependOn(b.getInstallStep());
     // Add the tool builds to this step
 }

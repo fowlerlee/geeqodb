@@ -9,11 +9,16 @@ pub const query = struct {
     pub const planner = @import("query/planner.zig");
     pub const executor = @import("query/executor.zig");
     pub const result = @import("query/result.zig");
+    pub const advanced_planner = @import("query/advanced_planner.zig");
+    pub const cost_model = @import("query/cost_model.zig");
+    pub const statistics = @import("query/statistics.zig");
+    pub const parallel = @import("query/parallel.zig");
 };
 pub const transaction = struct {
     pub const manager = @import("transaction/manager.zig");
 };
 pub const server = @import("server/server.zig");
+pub const gpu = @import("gpu/main.zig");
 
 pub const RocksDB = storage.RocksDB;
 

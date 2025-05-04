@@ -4,10 +4,17 @@ pub const PhysicalNodeType = enum {
     IndexSeek,
     IndexRangeScan,
     IndexScan,
+    Filter,
+    Project,
+    NestedLoopJoin,
+    HashJoin,
+    Sort,
+    Limit,
+    Aggregate,
 };
 const std = @import("std");
 const assert = @import("../build_options.zig").assert;
-const Index = @import("../storage/index.zig").Index;
+pub const Index = @import("../storage/index.zig").Index;
 
 /// Abstract Syntax Tree for SQL queries
 pub const AST = struct {
@@ -152,6 +159,12 @@ pub const QueryPlanner = struct {
             .index_type = index_type,
         };
         try self.available_indexes.append(index);
+    }
+
+    /// Register an index with the planner (alias for addIndex)
+    pub fn registerIndex(self: *QueryPlanner, index_name: []const u8, table_name: []const u8, column_name: []const u8, index_type: Index.IndexType) !void {
+        _ = index_name; // Not used in the base planner
+        try self.addIndex(table_name, column_name, index_type);
     }
 
     /// Find indexes for a column
@@ -300,6 +313,8 @@ pub const PhysicalPlan = struct {
     predicates: ?[]const Predicate,
     columns: ?[]const []const u8,
     children: ?[]PhysicalPlan,
+    use_gpu: bool = false,
+    parallel_degree: u32 = 1,
 
     pub fn deinit(self: *PhysicalPlan) void {
         if (self.table_name) |name| {
@@ -329,16 +344,16 @@ pub const PhysicalPlan = struct {
         self.allocator.destroy(self);
     }
 };
-    /// Optimize a logical plan into a physical execution plan
-    pub fn optimize(self: *QueryPlanner, logical_plan: *LogicalPlan) !*PhysicalPlan {
-        const physical_plan = try self.allocator.create(PhysicalPlan);
-        physical_plan.* = PhysicalPlan{
-            .allocator = self.allocator,
-            .access_method = .TableScan,
-            .table_name = logical_plan.table_name,
-            .predicates = logical_plan.predicates,
-            .columns = logical_plan.columns,
-            .children = null,
-        };
-        return physical_plan;
-    }
+/// Optimize a logical plan into a physical execution plan
+pub fn optimize(self: *QueryPlanner, logical_plan: *LogicalPlan) !*PhysicalPlan {
+    const physical_plan = try self.allocator.create(PhysicalPlan);
+    physical_plan.* = PhysicalPlan{
+        .allocator = self.allocator,
+        .access_method = .TableScan,
+        .table_name = logical_plan.table_name,
+        .predicates = logical_plan.predicates,
+        .columns = logical_plan.columns,
+        .children = null,
+    };
+    return physical_plan;
+}
