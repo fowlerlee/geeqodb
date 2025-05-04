@@ -55,6 +55,10 @@ zig build test-simulation
 
 # Run a specific simulation scenario
 ./zig-out/bin/run_simulation_tests --scenario vr_basic
+
+# Run server with rocksdb installed on homebrew
+zig build-exe server_main.zig -I/opt/homebrew/Cellar/rocksdb/10.2.1/include -L/opt/homebrew/Cellar/rocksdb/10.2.1/lib -lrocksdb
+
 ```
 
 ## Scripts
