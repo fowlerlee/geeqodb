@@ -36,6 +36,14 @@ pub fn build(b: *std.Build) void {
     planner_test.root_module.addImport("geeqodb", geeqodb_module);
     planner_test.linkSystemLibrary("rocksdb");
 
+    const executor_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/query/executor_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    executor_test.root_module.addImport("geeqodb", geeqodb_module);
+    executor_test.linkSystemLibrary("rocksdb");
+
     const advanced_planner_test = b.addTest(.{
         .root_source_file = b.path("src/tests/query/advanced_planner_test.zig"),
         .target = target,
@@ -71,6 +79,9 @@ pub fn build(b: *std.Build) void {
     const run_planner_tests = b.addRunArtifact(planner_test);
     run_planner_tests.has_side_effects = true;
 
+    const run_executor_tests = b.addRunArtifact(executor_test);
+    run_executor_tests.has_side_effects = true;
+
     const run_advanced_planner_tests = b.addRunArtifact(advanced_planner_test);
     run_advanced_planner_tests.has_side_effects = true;
 
@@ -86,6 +97,7 @@ pub fn build(b: *std.Build) void {
     // Add test steps to the main test step
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_planner_tests.step);
+    test_step.dependOn(&run_executor_tests.step);
     test_step.dependOn(&run_advanced_planner_tests.step);
     test_step.dependOn(&run_gpu_tests.step);
     test_step.dependOn(&run_rocksdb_tests.step);
@@ -94,6 +106,10 @@ pub fn build(b: *std.Build) void {
     // Add a separate step for database tests only
     const database_test_step = b.step("test-database", "Run database tests only");
     database_test_step.dependOn(&run_database_tests.step);
+
+    // Add a separate step for executor tests only
+    const executor_test_step = b.step("test-executor", "Run executor tests only");
+    executor_test_step.dependOn(&run_executor_tests.step);
 
     // Add a separate step for advanced planner tests only
     const advanced_planner_test_step = b.step("test-advanced-planner", "Run advanced planner tests only");

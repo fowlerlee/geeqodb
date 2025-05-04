@@ -28,8 +28,8 @@ test "QueryExecutor execute" {
     const logical_plan = try query_planner.plan(ast);
     defer logical_plan.deinit();
 
-    // Optimize the plan
-    const physical_plan = try query_planner.optimize(logical_plan);
+    // Optimize the plan - using the module function, not a method
+    const physical_plan = try planner.optimize(query_planner, logical_plan);
     defer physical_plan.deinit();
 
     // Execute the plan
@@ -61,8 +61,8 @@ test "QueryExecutor execute with complex query" {
     const logical_plan = try query_planner.plan(ast);
     defer logical_plan.deinit();
 
-    // Optimize the plan
-    const physical_plan = try query_planner.optimize(logical_plan);
+    // Optimize the plan - using the module function, not a method
+    const physical_plan = try planner.optimize(query_planner, logical_plan);
     defer physical_plan.deinit();
 
     // Execute the plan

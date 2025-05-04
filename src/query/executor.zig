@@ -46,6 +46,27 @@ pub const DatabaseContext = struct {
         const index_ptr = self.indexes.get(name) orelse return null;
         return @ptrCast(@alignCast(index_ptr));
     }
+
+    pub fn executeRaw(self: *DatabaseContext, query: []const u8) !result.ResultSet {
+        // Create a QueryPlanner instance
+        var query_planner = try planner.QueryPlanner.init(self.allocator);
+        defer query_planner.deinit();
+
+        // Parse the SQL query
+        const ast = try query_planner.*.parse(query);
+        defer ast.deinit();
+
+        // Generate logical plan
+        const logical_plan = try query_planner.*.plan(ast);
+        defer logical_plan.deinit();
+
+        // Optimize and create physical plan - optimize is a module function, not a method
+        const physical_plan = try planner.optimize(query_planner, logical_plan);
+        defer physical_plan.deinit();
+
+        // Execute the physical plan
+        return try QueryExecutor.execute(self.allocator, physical_plan, self);
+    }
 };
 
 /// Query executor for executing physical plans

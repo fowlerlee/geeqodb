@@ -99,11 +99,13 @@ pub const AdvancedQueryPlanner = struct {
 
     /// Optimize a logical plan into a physical execution plan
     pub fn optimize(self: *AdvancedQueryPlanner, logical_plan: *LogicalPlan) !*PhysicalPlan {
-        // Apply logical optimizations
-        const optimized_logical_plan = try self.optimizeLogical(logical_plan);
+        // Apply logical optimizations directly to the input logical plan
+        // This avoids creating a new logical plan that would need to be freed
+        try self.applyPredicatePushdown(logical_plan);
+        try self.applyJoinReordering(logical_plan);
 
         // Convert to physical plan
-        const physical_plan = try self.createPhysicalPlan(optimized_logical_plan);
+        const physical_plan = try self.createPhysicalPlan(logical_plan);
 
         // Apply physical optimizations
         try self.optimizePhysical(physical_plan);
@@ -121,18 +123,18 @@ pub const AdvancedQueryPlanner = struct {
 
     /// Apply logical optimizations to a logical plan
     fn optimizeLogical(self: *AdvancedQueryPlanner, logical_plan_input: *LogicalPlan) !*LogicalPlan {
-        // Create a copy of the plan for optimization
+        // Create a new logical plan that's a shallow copy of the input
         const optimized_plan = try self.allocator.create(LogicalPlan);
         errdefer self.allocator.destroy(optimized_plan);
 
-        // Copy the plan
+        // Initialize with the same values as the input plan
         optimized_plan.* = logical_plan_input.*;
 
-        // Apply predicate pushdown
-        try self.applyPredicatePushdown(optimized_plan);
+        // Apply predicate pushdown (this doesn't modify the plan in our simplified version)
+        // try self.applyPredicatePushdown(optimized_plan);
 
-        // Apply join reordering
-        try self.applyJoinReordering(optimized_plan);
+        // Apply join reordering (this doesn't modify the plan in our simplified version)
+        // try self.applyJoinReordering(optimized_plan);
 
         return optimized_plan;
     }
@@ -157,7 +159,35 @@ pub const AdvancedQueryPlanner = struct {
                         // Find child node for this table
                         if (logical_plan.children) |children| {
                             for (children) |*child| {
-                                if (child.table_name != null and std.mem.eql(u8, child.table_name.?, table_name)) {
+                                if (child.node_type == .Join and child.children != null and child.children.?.len > 0) {
+                                    // If the child is a join, check its children
+                                    for (child.children.?) |*join_child| {
+                                        if (join_child.table_name != null and std.mem.eql(u8, join_child.table_name.?, table_name)) {
+                                            // Create a new predicate for the join child
+                                            const new_pred = try self.allocator.create(planner.Predicate);
+                                            new_pred.* = pred;
+                                            new_pred.column = try self.allocator.dupe(u8, column_name);
+
+                                            // Add predicate to join child
+                                            if (join_child.predicates == null) {
+                                                var new_preds = try self.allocator.alloc(planner.Predicate, 1);
+                                                new_preds[0] = new_pred.*;
+                                                join_child.predicates = new_preds;
+                                            } else {
+                                                const old_preds = join_child.predicates.?;
+                                                var new_preds = try self.allocator.alloc(planner.Predicate, old_preds.len + 1);
+                                                for (old_preds, 0..) |old_pred, i| {
+                                                    new_preds[i] = old_pred;
+                                                }
+                                                new_preds[old_preds.len] = new_pred.*;
+                                                join_child.predicates = new_preds;
+                                                self.allocator.free(old_preds);
+                                            }
+
+                                            break;
+                                        }
+                                    }
+                                } else if (child.table_name != null and std.mem.eql(u8, child.table_name.?, table_name)) {
                                     // Create a new predicate for the child
                                     const new_pred = try self.allocator.create(planner.Predicate);
                                     new_pred.* = pred;
@@ -265,6 +295,10 @@ pub const AdvancedQueryPlanner = struct {
                 new_preds[i] = pred;
                 // Copy the column string
                 new_preds[i].column = try self.allocator.dupe(u8, pred.column);
+                // Copy string values if needed
+                if (pred.value == .String) {
+                    new_preds[i].value = planner.PlanValue{ .String = try self.allocator.dupe(u8, pred.value.String) };
+                }
             }
             physical_plan.predicates = new_preds;
         }

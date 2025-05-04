@@ -315,6 +315,11 @@ pub const PhysicalPlan = struct {
     children: ?[]PhysicalPlan,
     use_gpu: bool = false,
     parallel_degree: u32 = 1,
+    index_info: ?struct {
+        name: []const u8,
+        column_name: []const u8,
+        index_type: Index.IndexType,
+    } = null,
 
     pub fn deinit(self: *PhysicalPlan) void {
         if (self.table_name) |name| {
@@ -349,6 +354,7 @@ pub fn optimize(self: *QueryPlanner, logical_plan: *LogicalPlan) !*PhysicalPlan 
     const physical_plan = try self.allocator.create(PhysicalPlan);
     physical_plan.* = PhysicalPlan{
         .allocator = self.allocator,
+        .node_type = .TableScan, // Default to TableScan
         .access_method = .TableScan,
         .table_name = logical_plan.table_name,
         .predicates = logical_plan.predicates,
