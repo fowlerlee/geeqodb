@@ -8,6 +8,7 @@ pub const WAL = struct {
     file: ?std.fs.File,
     transactions: std.AutoHashMap(u64, []const u8),
     is_recovered: bool,
+    current_position: u64 = 0, // Track current position in the WAL
 
     /// Initialize a new WAL instance
     pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*WAL {
@@ -63,6 +64,17 @@ pub const WAL = struct {
         self.allocator.destroy(self);
     }
 
+    /// Get the current position in the WAL file
+    pub fn getCurrentPosition(self: *WAL) !u64 {
+        if (self.file == null) {
+            return error.WALClosed;
+        }
+
+        // For a real implementation, this would return the current position in the WAL file
+        // For now, we'll just return the tracked position
+        return self.current_position;
+    }
+
     /// Log a transaction
     pub fn logTransaction(self: *WAL, txn_id: u64, data: []const u8) !void {
         if (self.file == null) {
@@ -83,6 +95,9 @@ pub const WAL = struct {
 
         // Write transaction data
         try writer.writeAll(data);
+
+        // Update the current position
+        self.current_position += 16 + data.len; // 8 bytes for txn_id, 8 bytes for data length, plus data
 
         // Flush to ensure data is written to disk
         try file.sync();

@@ -1,11 +1,6 @@
 const std = @import("std");
 const assert = @import("../build_options.zig").assert;
-const c = @cImport({
-    // Include RocksDB C API
-    @cDefine("ROCKSDB_PLATFORM_POSIX", "1");
-    @cDefine("ROCKSDB_LIB_IO_POSIX", "1");
-    @cInclude("rocksdb/c.h");
-});
+const c = @import("rocksdb_c.zig");
 
 pub const RocksDBError = error{
     RocksDBOpenFailed,
@@ -60,10 +55,6 @@ pub const RocksDB = struct {
 
     /// Open the database
     pub fn open(self: *RocksDB) !void {
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
-
         // Create options
         self.options = c.rocksdb_options_create();
         if (self.options == null) return error.RocksDBOpenFailed;
@@ -80,11 +71,20 @@ pub const RocksDB = struct {
         if (self.read_options == null) return error.RocksDBOpenFailed;
         errdefer if (self.read_options) |read_options| c.rocksdb_readoptions_destroy(read_options);
 
-        // Open database
-        self.db = c.rocksdb_open(self.options, @ptrCast(self.data_dir.ptr), err);
+        // Create a null-terminated copy of the data directory path
+        const data_dir_c = try self.allocator.alloc(u8, self.data_dir.len + 1);
+        defer self.allocator.free(data_dir_c);
+        @memcpy(data_dir_c[0..self.data_dir.len], self.data_dir);
+        data_dir_c[self.data_dir.len] = 0;
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        // Open database
+        var err_ptr: ?[*:0]u8 = null;
+        self.db = c.rocksdb_open(self.options, @as([*:0]const u8, @ptrCast(data_dir_c.ptr)), &err_ptr);
+
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to open database: {s}", .{err_msg});
             return error.RocksDBOpenFailed;
         }
 
@@ -135,22 +135,22 @@ pub const RocksDB = struct {
         if (self.db == null) return error.DatabaseNotInitialized;
         if (self.write_options == null) return error.DatabaseNotInitialized;
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        var err_ptr: ?[*:0]u8 = null;
 
         c.rocksdb_put(
             self.db.?,
             self.write_options.?,
-            @ptrCast(key.ptr),
+            key.ptr,
             key.len,
-            @ptrCast(value.ptr),
+            value.ptr,
             value.len,
-            err,
+            &err_ptr,
         );
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to put key-value pair: {s}", .{err_msg});
             return error.RocksDBPutFailed;
         }
     }
@@ -163,22 +163,22 @@ pub const RocksDB = struct {
         if (self.db == null) return error.DatabaseNotInitialized;
         if (self.read_options == null) return error.DatabaseNotInitialized;
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        var err_ptr: ?[*:0]u8 = null;
         var val_len: usize = 0;
 
         const val_ptr = c.rocksdb_get(
             self.db.?,
             self.read_options.?,
-            @ptrCast(key.ptr),
+            key.ptr,
             key.len,
             &val_len,
-            err,
+            &err_ptr,
         );
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to get value: {s}", .{err_msg});
             return error.RocksDBGetFailed;
         }
 
@@ -192,7 +192,9 @@ pub const RocksDB = struct {
         const value = try allocator.alloc(u8, val_len);
         errdefer allocator.free(value);
 
-        @memcpy(value, val_ptr[0..val_len]);
+        if (val_ptr) |ptr| {
+            @memcpy(value, ptr[0..val_len]);
+        }
 
         return value;
     }
@@ -205,20 +207,20 @@ pub const RocksDB = struct {
         if (self.db == null) return error.DatabaseNotInitialized;
         if (self.write_options == null) return error.DatabaseNotInitialized;
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        var err_ptr: ?[*:0]u8 = null;
 
         c.rocksdb_delete(
             self.db.?,
             self.write_options.?,
-            @ptrCast(key.ptr),
+            key.ptr,
             key.len,
-            err,
+            &err_ptr,
         );
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to delete key: {s}", .{err_msg});
             return error.RocksDBDeleteFailed;
         }
     }
@@ -305,7 +307,9 @@ pub const RocksDB = struct {
 
                 // This is a pointer to RocksDB's internal memory, valid until next operation
                 // We don't need to free it
-                self.current_key = key_ptr[0..key_len];
+                if (key_ptr) |ptr| {
+                    self.current_key = ptr[0..key_len];
+                }
                 return self.current_key.?;
             }
 
@@ -327,7 +331,9 @@ pub const RocksDB = struct {
 
                 // This is a pointer to RocksDB's internal memory, valid until next operation
                 // We don't need to free it
-                self.current_value = value_ptr[0..value_len];
+                if (value_ptr) |ptr| {
+                    self.current_value = ptr[0..value_len];
+                }
                 return self.current_value.?;
             }
 
@@ -383,14 +389,14 @@ pub const RocksDB = struct {
             if (self.db.db == null) return error.DatabaseNotInitialized;
             if (self.batch == null) return error.BatchNotInitialized;
 
-            var err: [*c][*c]u8 = null;
-            @setRuntimeSafety(false); // Disable runtime safety for C interop
-            _ = &err; // Mark as used to prevent optimization
+            var err_ptr: ?[*:0]u8 = null;
 
-            c.rocksdb_write(self.db.db.?, self.db.write_options.?, self.batch.?, err);
+            c.rocksdb_write(self.db.db.?, self.db.write_options.?, self.batch.?, &err_ptr);
 
-            if (err != null and err[0] != null) {
-                c.rocksdb_free(err[0]);
+            if (err_ptr != null) {
+                const err_msg = std.mem.span(err_ptr.?);
+                c.rocksdb_free(err_ptr);
+                std.log.err("Failed to commit write batch: {s}", .{err_msg});
                 return error.RocksDBWriteFailed;
             }
         }
@@ -456,30 +462,53 @@ pub const RocksDB = struct {
         if (self.db == null) return error.DatabaseNotInitialized;
         if (self.options == null) return error.OptionsNotInitialized;
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        // Create the backup directory if it doesn't exist
+        std.fs.cwd().makePath(backup_dir) catch |err| {
+            std.log.err("Failed to create backup directory: {}", .{err});
+            return error.RocksDBBackupFailed;
+        };
 
-        const backup_engine = c.rocksdb_backup_engine_open(self.options.?, @ptrCast(backup_dir.ptr), err);
+        // Create a null-terminated copy of the backup directory path
+        const backup_dir_c = try self.allocator.alloc(u8, backup_dir.len + 1);
+        defer self.allocator.free(backup_dir_c);
+        @memcpy(backup_dir_c[0..backup_dir.len], backup_dir);
+        backup_dir_c[backup_dir.len] = 0;
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        var err_ptr: ?[*:0]u8 = null;
+
+        const backup_engine = c.rocksdb_backup_engine_open(self.options.?, @as([*:0]const u8, @ptrCast(backup_dir_c.ptr)), &err_ptr);
+
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to open backup engine: {s}", .{err_msg});
             return error.RocksDBBackupEngineFailed;
         }
 
         if (backup_engine == null) return error.RocksDBBackupEngineFailed;
         defer c.rocksdb_backup_engine_close(backup_engine);
 
-        c.rocksdb_backup_engine_create_new_backup(backup_engine, self.db.?, err);
+        // Reset error pointer before next operation
+        err_ptr = null;
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        c.rocksdb_backup_engine_create_new_backup(backup_engine, self.db.?, &err_ptr);
+
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to create backup: {s}", .{err_msg});
             return error.RocksDBBackupFailed;
         }
     }
 
     /// Restore from a backup
     pub fn restoreFromBackup(self: *RocksDB, backup_dir: []const u8) !void {
+        // Verify backup directory exists
+        std.fs.cwd().access(backup_dir, .{}) catch |err| {
+            std.log.err("Backup directory does not exist or is not accessible: {}", .{err});
+            return error.RocksDBBackupEngineFailed;
+        };
+
         // Close the database if it's open
         if (self.is_open) {
             self.close();
@@ -492,14 +521,31 @@ pub const RocksDB = struct {
             c.rocksdb_options_set_create_if_missing(self.options.?, 1);
         }
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        // Create null-terminated copies of the paths
+        const backup_dir_c = try self.allocator.alloc(u8, backup_dir.len + 1);
+        defer self.allocator.free(backup_dir_c);
+        @memcpy(backup_dir_c[0..backup_dir.len], backup_dir);
+        backup_dir_c[backup_dir.len] = 0;
 
-        const backup_engine = c.rocksdb_backup_engine_open(self.options.?, @ptrCast(backup_dir.ptr), err);
+        const data_dir_c = try self.allocator.alloc(u8, self.data_dir.len + 1);
+        defer self.allocator.free(data_dir_c);
+        @memcpy(data_dir_c[0..self.data_dir.len], self.data_dir);
+        data_dir_c[self.data_dir.len] = 0;
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        // Make sure the data directory exists
+        std.fs.cwd().makePath(self.data_dir) catch |err| {
+            std.log.err("Failed to create data directory: {}", .{err});
+            return error.RocksDBRestoreFailed;
+        };
+
+        var err_ptr: ?[*:0]u8 = null;
+
+        const backup_engine = c.rocksdb_backup_engine_open(self.options.?, @as([*:0]const u8, @ptrCast(backup_dir_c.ptr)), &err_ptr);
+
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to open backup engine: {s}", .{err_msg});
             return error.RocksDBBackupEngineFailed;
         }
 
@@ -511,16 +557,21 @@ pub const RocksDB = struct {
         if (restore_options == null) return error.RocksDBRestoreFailed;
         defer c.rocksdb_restore_options_destroy(restore_options);
 
+        // Reset error pointer before next operation
+        err_ptr = null;
+
         c.rocksdb_backup_engine_restore_db_from_latest_backup(
             backup_engine,
-            @ptrCast(self.data_dir.ptr),
-            @ptrCast(self.data_dir.ptr),
+            @as([*:0]const u8, @ptrCast(data_dir_c.ptr)),
+            @as([*:0]const u8, @ptrCast(data_dir_c.ptr)),
             restore_options,
-            err,
+            &err_ptr,
         );
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to restore from backup: {s}", .{err_msg});
             return error.RocksDBRestoreFailed;
         }
 
@@ -533,18 +584,24 @@ pub const RocksDB = struct {
         if (!self.is_open) return error.DatabaseClosed;
         if (self.db == null) return error.DatabaseNotInitialized;
 
-        var err: [*c][*c]u8 = null;
-        @setRuntimeSafety(false); // Disable runtime safety for C interop
-        _ = &err; // Mark as used to prevent optimization
+        // Create a null-terminated copy of the name
+        const name_c = try self.allocator.alloc(u8, name.len + 1);
+        defer self.allocator.free(name_c);
+        @memcpy(name_c[0..name.len], name);
+        name_c[name.len] = 0;
+
+        var err_ptr: ?[*:0]u8 = null;
 
         const cf_options = c.rocksdb_options_create();
         if (cf_options == null) return error.OptionsNotInitialized;
         defer c.rocksdb_options_destroy(cf_options);
 
-        const cf_handle = c.rocksdb_create_column_family(self.db.?, cf_options, @ptrCast(name.ptr), err);
+        const cf_handle = c.rocksdb_create_column_family(self.db.?, cf_options, @as([*:0]const u8, @ptrCast(name_c.ptr)), &err_ptr);
 
-        if (err != null and err[0] != null) {
-            c.rocksdb_free(err[0]);
+        if (err_ptr != null) {
+            const err_msg = std.mem.span(err_ptr.?);
+            c.rocksdb_free(err_ptr);
+            std.log.err("Failed to create column family: {s}", .{err_msg});
             return error.RocksDBCreateColumnFamilyFailed;
         }
 

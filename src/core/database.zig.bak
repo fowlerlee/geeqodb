@@ -26,11 +26,17 @@ pub const OLAPDatabase = struct {
         // Validate inputs
         assert(query.len > 0); // Query should not be empty
 
-        // For testing purposes, return an empty result set that's compatible with the ResultSet structure in result.zig
-        return ResultSet.init(self.allocator, 0, 0) catch |err| {
-            std.log.err("Failed to initialize result set: {}", .{err});
-            return err;
-        };
+        const ast = try self.query_planner.parse(query);
+        defer ast.deinit();
+
+        const plan = try self.query_planner.plan(ast);
+        defer plan.deinit();
+
+        // TODO: Implement optimize method
+        const physical_plan = plan;
+        defer physical_plan.deinit();
+
+        return try QueryExecutor.execute(self.allocator, physical_plan, self.db_context);
     }
 
     /// Deinitialize the database
@@ -80,36 +86,25 @@ pub const OLAPDatabase = struct {
             return err;
         };
 
-        // Create a null-terminated copy of the backup directory path
-        const backup_dir_c = try self.allocator.alloc(u8, backup_dir.len + 1);
-        defer self.allocator.free(backup_dir_c);
-        @memcpy(backup_dir_c[0..backup_dir.len], backup_dir);
-        backup_dir_c[backup_dir.len] = 0;
+        // Create a backup using RocksDB's backup engine
+        var err_ptr: ?[*]u8 = null;
 
-        // Create the backup engine directly
-        var err_ptr: ?[*:0]u8 = null;
-        const backup_engine = c.rocksdb_backup_engine_open(self.storage.options, @as([*:0]const u8, @ptrCast(backup_dir_c.ptr)), &err_ptr);
+        // Create a backup options object
+        const backup_options = c.rocksdb_backup_engine_options_create(backup_dir.ptr);
+        defer c.rocksdb_backup_engine_options_destroy(backup_options);
 
+        // Create the backup engine
+        const backup_engine = c.rocksdb_backup_engine_open(self.storage.options, backup_options, &err_ptr);
         if (err_ptr != null) {
             const err_msg = std.mem.span(err_ptr.?);
             c.rocksdb_free(err_ptr);
             std.log.err("Failed to open backup engine: {s}", .{err_msg});
             return error.RocksDBBackupEngineFailed;
         }
-
-        if (backup_engine == null) {
-            std.log.err("Failed to open backup engine: null pointer returned", .{});
-            return error.RocksDBBackupEngineFailed;
-        }
-
         defer c.rocksdb_backup_engine_close(backup_engine);
-
-        // Reset error pointer before next operation
-        err_ptr = null;
 
         // Create the backup
         c.rocksdb_backup_engine_create_new_backup(backup_engine, self.storage.db, &err_ptr);
-
         if (err_ptr != null) {
             const err_msg = std.mem.span(err_ptr.?);
             c.rocksdb_free(err_ptr);
@@ -266,15 +261,8 @@ pub const OLAPDatabase = struct {
 pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
     var db = try allocator.create(OLAPDatabase);
     db.allocator = allocator;
-
-    // If data_dir is empty, use a default directory
-    const actual_data_dir = if (data_dir.len == 0) "data" else data_dir;
-
-    // Create the data directory if it doesn't exist
-    try std.fs.cwd().makePath(actual_data_dir);
-
-    db.storage = try RocksDB.init(allocator, actual_data_dir);
-    db.wal = try WAL.init(allocator, actual_data_dir);
+    db.storage = try RocksDB.init(allocator, data_dir);
+    db.wal = try WAL.init(allocator, data_dir);
     db.query_planner = try QueryPlanner.init(allocator);
     db.txn_manager = try TransactionManager.init(allocator);
     db.db_context = try DatabaseContext.init(allocator);

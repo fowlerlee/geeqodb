@@ -1,3 +1,10 @@
+/// Physical plan node types
+pub const PhysicalNodeType = enum {
+    TableScan,
+    IndexSeek,
+    IndexRangeScan,
+    IndexScan,
+};
 const std = @import("std");
 const assert = @import("../build_options.zig").assert;
 const Index = @import("../storage/index.zig").Index;
@@ -284,3 +291,54 @@ test "Query planner access method selection" {
     try planner.addIndex("users", "id", .BTree);
     try std.testing.expectEqual(AccessMethod.IndexSeek, try planner.findBestAccessMethod("users", "id"));
 }
+/// Physical plan for query execution
+pub const PhysicalPlan = struct {
+    node_type: PhysicalNodeType,
+    allocator: std.mem.Allocator,
+    access_method: AccessMethod,
+    table_name: ?[]const u8,
+    predicates: ?[]const Predicate,
+    columns: ?[]const []const u8,
+    children: ?[]PhysicalPlan,
+
+    pub fn deinit(self: *PhysicalPlan) void {
+        if (self.table_name) |name| {
+            self.allocator.free(name);
+        }
+        if (self.predicates) |preds| {
+            for (preds) |pred| {
+                self.allocator.free(pred.column);
+                if (pred.value == .String) {
+                    self.allocator.free(pred.value.String);
+                }
+            }
+            self.allocator.free(preds);
+        }
+        if (self.columns) |cols| {
+            for (cols) |col| {
+                self.allocator.free(col);
+            }
+            self.allocator.free(cols);
+        }
+        if (self.children) |kids| {
+            for (kids) |*child| {
+                child.deinit();
+            }
+            self.allocator.free(kids);
+        }
+        self.allocator.destroy(self);
+    }
+};
+    /// Optimize a logical plan into a physical execution plan
+    pub fn optimize(self: *QueryPlanner, logical_plan: *LogicalPlan) !*PhysicalPlan {
+        const physical_plan = try self.allocator.create(PhysicalPlan);
+        physical_plan.* = PhysicalPlan{
+            .allocator = self.allocator,
+            .access_method = .TableScan,
+            .table_name = logical_plan.table_name,
+            .predicates = logical_plan.predicates,
+            .columns = logical_plan.columns,
+            .children = null,
+        };
+        return physical_plan;
+    }

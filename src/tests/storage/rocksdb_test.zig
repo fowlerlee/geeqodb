@@ -244,12 +244,25 @@ test "RocksDB backup and restore" {
     try cleanupTestDir(test_dir);
     try cleanupTestDir(backup_dir);
 
+    // Create the directories to ensure they exist
+    try std.fs.cwd().makePath(test_dir);
+    try std.fs.cwd().makePath(backup_dir);
+
     // Initialize RocksDB
     var db = try RocksDB.init(allocator, test_dir);
     defer {
+        // Make sure to close the database before cleanup
+        if (db.is_open) db.close();
         db.deinit();
-        cleanupTestDir(test_dir) catch {};
-        cleanupTestDir(backup_dir) catch {};
+    }
+    // Use separate defer for cleanup to ensure it runs even if the test fails
+    defer {
+        cleanupTestDir(test_dir) catch |err| {
+            std.debug.print("Failed to clean up test directory: {}\n", .{err});
+        };
+        cleanupTestDir(backup_dir) catch |err| {
+            std.debug.print("Failed to clean up backup directory: {}\n", .{err});
+        };
     }
 
     // Add some data
@@ -286,9 +299,8 @@ test "RocksDB backup and restore" {
         }
     }
 
-    // We need to close and reopen the database to test restore
+    // We need to close the database before restoring
     db.close();
-    try db.open();
 
     // Restore from backup
     try db.restoreFromBackup(backup_dir);
