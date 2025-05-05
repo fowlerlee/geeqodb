@@ -92,6 +92,8 @@ extern fn cuda_execute_join(left: CudaBuffer, right: CudaBuffer, output: CudaBuf
 extern fn cuda_execute_aggregate(input: CudaBuffer, output: CudaBuffer, op: CudaAggregateOp, data_type: CudaDataType, column_index: c_int) CudaError;
 extern fn cuda_execute_sort(input: CudaBuffer, output: CudaBuffer, data_type: CudaDataType, column_index: c_int, ascending: c_int) CudaError;
 extern fn cuda_execute_group_by(input: CudaBuffer, output: CudaBuffer, group_type: CudaDataType, group_column: c_int, agg_type: CudaDataType, agg_column: c_int, agg_op: CudaAggregateOp) CudaError;
+extern fn cuda_execute_hash_join(left_keys: CudaBuffer, left_values: CudaBuffer, right_keys: CudaBuffer, right_values: CudaBuffer, output_keys: CudaBuffer, output_left_values: CudaBuffer, output_right_values: CudaBuffer, left_size: usize, right_size: usize) CudaError;
+extern fn cuda_execute_window_function(input: CudaBuffer, output: CudaBuffer, data_type: CudaDataType, num_rows: usize) CudaError;
 extern fn cuda_get_error_string(err: CudaError) [*:0]const u8;
 
 // Add external C functions for OpenGL interop
@@ -262,6 +264,32 @@ pub const Cuda = struct {
 
         if (err != .Success) {
             return error.CudaExecuteGroupByFailed;
+        }
+    }
+
+    /// Execute hash join operation on the GPU
+    pub fn executeHashJoin(self: *const Cuda, left_keys: CudaBuffer, left_values: CudaBuffer, right_keys: CudaBuffer, right_values: CudaBuffer, output_keys: CudaBuffer, output_left_values: CudaBuffer, output_right_values: CudaBuffer, left_size: usize, right_size: usize) !void {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        const err = cuda_execute_hash_join(left_keys, left_values, right_keys, right_values, output_keys, output_left_values, output_right_values, left_size, right_size);
+
+        if (err != .Success) {
+            return error.CudaExecuteHashJoinFailed;
+        }
+    }
+
+    /// Execute window function on the GPU
+    pub fn executeWindowFunction(self: *const Cuda, input: CudaBuffer, output: CudaBuffer, data_type: CudaDataType, num_rows: usize) !void {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        const err = cuda_execute_window_function(input, output, data_type, num_rows);
+
+        if (err != .Success) {
+            return error.CudaExecuteWindowFunctionFailed;
         }
     }
 

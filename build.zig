@@ -59,6 +59,13 @@ pub fn build(b: *std.Build) void {
     });
     gpu_test.root_module.addImport("geeqodb", geeqodb_module);
 
+    const cuda_kernels_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/gpu/cuda_kernels_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cuda_kernels_test.root_module.addImport("geeqodb", geeqodb_module);
+
     const rocksdb_test = b.addTest(.{
         .root_source_file = b.path("src/tests/storage/rocksdb_test.zig"),
         .target = target,
@@ -88,6 +95,9 @@ pub fn build(b: *std.Build) void {
     const run_gpu_tests = b.addRunArtifact(gpu_test);
     run_gpu_tests.has_side_effects = true;
 
+    const run_cuda_kernels_tests = b.addRunArtifact(cuda_kernels_test);
+    run_cuda_kernels_tests.has_side_effects = true;
+
     const run_rocksdb_tests = b.addRunArtifact(rocksdb_test);
     run_rocksdb_tests.has_side_effects = true;
 
@@ -100,6 +110,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_executor_tests.step);
     test_step.dependOn(&run_advanced_planner_tests.step);
     test_step.dependOn(&run_gpu_tests.step);
+    test_step.dependOn(&run_cuda_kernels_tests.step);
     test_step.dependOn(&run_rocksdb_tests.step);
     test_step.dependOn(&run_database_tests.step);
 
@@ -118,6 +129,7 @@ pub fn build(b: *std.Build) void {
     // Add a separate step for GPU tests only
     const gpu_test_step = b.step("test-gpu", "Run GPU tests only");
     gpu_test_step.dependOn(&run_gpu_tests.step);
+    gpu_test_step.dependOn(&run_cuda_kernels_tests.step);
 
     const tools_step = b.step("tools", "Build all tools in the src/tools directory");
 
