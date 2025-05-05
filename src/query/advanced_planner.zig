@@ -3,14 +3,15 @@ const planner = @import("planner.zig");
 const cost_model = @import("cost_model.zig");
 const statistics = @import("statistics.zig");
 const parallel = @import("parallel.zig");
-const gpu_device = @import("../gpu/device.zig");
+const gpu = @import("../gpu/main.zig");
 const QueryPlanner = planner.QueryPlanner;
 const LogicalPlan = planner.LogicalPlan;
 const PhysicalPlan = planner.PhysicalPlan;
 const CostModel = cost_model.CostModel;
 const Statistics = statistics.Statistics;
 const ParallelPlanner = parallel.ParallelPlanner;
-const GpuDevice = gpu_device.GpuDevice;
+const GpuDevice = gpu.GpuDevice;
+const GpuQueryIntegration = gpu.GpuQueryIntegration;
 
 /// Advanced query planner with cost-based optimization and GPU acceleration
 pub const AdvancedQueryPlanner = struct {
@@ -412,9 +413,68 @@ pub const AdvancedQueryPlanner = struct {
             return;
         }
 
-        // Check if GPU acceleration would be beneficial
+        // Check if the operation is suitable for GPU acceleration
+        const suitable_node_types = [_]planner.PhysicalNodeType{
+            .TableScan,
+            .Filter,
+            .NestedLoopJoin,
+            .HashJoin,
+            .Aggregate,
+            .Sort,
+            .GroupBy,
+            .Window,
+        };
+
+        var suitable_type = false;
+        for (suitable_node_types) |node_type| {
+            if (physical_plan.node_type == node_type) {
+                suitable_type = true;
+                break;
+            }
+        }
+
+        if (!suitable_type) {
+            physical_plan.use_gpu = false;
+
+            // Recursively apply to children
+            if (physical_plan.children) |children| {
+                for (children) |*child| {
+                    try self.applyGpuAcceleration(child);
+                }
+            }
+
+            return;
+        }
+
+        // Get estimated row count
+        var row_count: usize = 1000; // Default estimate
+        if (physical_plan.table_name != null and self.statistics != null) {
+            if (self.statistics.?.getTableRowCount(physical_plan.table_name.?)) |count| {
+                row_count = @intCast(count);
+            }
+        }
+
+        // For small data sets, CPU is faster due to transfer overhead
+        const min_rows_for_gpu = 10000;
+        if (row_count < min_rows_for_gpu) {
+            physical_plan.use_gpu = false;
+
+            // Recursively apply to children
+            if (physical_plan.children) |children| {
+                for (children) |*child| {
+                    try self.applyGpuAcceleration(child);
+                }
+            }
+
+            return;
+        }
+
+        // Check if GPU acceleration would be beneficial using cost model
         if (self.cost_model) |cost_model_instance| {
             physical_plan.use_gpu = try cost_model_instance.shouldUseGpu(physical_plan);
+        } else {
+            // If no cost model is available, use GPU for large datasets
+            physical_plan.use_gpu = row_count >= min_rows_for_gpu;
         }
 
         // Recursively apply to children

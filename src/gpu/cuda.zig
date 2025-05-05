@@ -94,6 +94,13 @@ extern fn cuda_execute_sort(input: CudaBuffer, output: CudaBuffer, data_type: Cu
 extern fn cuda_execute_group_by(input: CudaBuffer, output: CudaBuffer, group_type: CudaDataType, group_column: c_int, agg_type: CudaDataType, agg_column: c_int, agg_op: CudaAggregateOp) CudaError;
 extern fn cuda_get_error_string(err: CudaError) [*:0]const u8;
 
+// Add external C functions for OpenGL interop
+extern fn cuda_gl_register_buffer(buffer: c_uint, resource: *?*anyopaque) CudaError;
+extern fn cuda_graphics_map_resources(resource: ?*anyopaque, stream: ?*anyopaque) CudaError;
+extern fn cuda_graphics_get_mapped_pointer(devPtr: *?*anyopaque, size: *usize, resource: ?*anyopaque) CudaError;
+extern fn cuda_graphics_unmap_resources(resource: ?*anyopaque, stream: ?*anyopaque) CudaError;
+extern fn cuda_graphics_unregister_resource(resource: ?*anyopaque) CudaError;
+
 // Zig wrapper for CUDA
 pub const Cuda = struct {
     initialized: bool,
@@ -263,6 +270,71 @@ pub const Cuda = struct {
         const c_str = cuda_get_error_string(error_code);
         return std.mem.span(c_str);
     }
+
+    /// Register an OpenGL buffer with CUDA
+    pub fn registerGLBuffer(self: *const Cuda, gl_buffer: c_uint) !CudaGraphicsResource {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        var resource: ?*anyopaque = null;
+        const err = cuda_gl_register_buffer(gl_buffer, &resource);
+
+        if (err != .Success) {
+            return error.CudaGLRegisterFailed;
+        }
+
+        return CudaGraphicsResource{ .resource = resource };
+    }
+
+    /// Map graphics resource to get device pointer
+    pub fn mapGraphicsResource(self: *const Cuda, resource: CudaGraphicsResource) !MappedResource {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        const err = cuda_graphics_map_resources(resource.resource, null);
+        if (err != .Success) {
+            return error.CudaMapResourceFailed;
+        }
+
+        var dev_ptr: ?*anyopaque = null;
+        var size: usize = 0;
+        const ptr_err = cuda_graphics_get_mapped_pointer(&dev_ptr, &size, resource.resource);
+        if (ptr_err != .Success) {
+            return error.CudaGetMappedPointerFailed;
+        }
+
+        return MappedResource{
+            .device_ptr = dev_ptr,
+            .size = size,
+            .resource = resource,
+        };
+    }
+
+    /// Unmap graphics resource
+    pub fn unmapGraphicsResource(self: *const Cuda, resource: CudaGraphicsResource) !void {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        const err = cuda_graphics_unmap_resources(resource.resource, null);
+        if (err != .Success) {
+            return error.CudaUnmapResourceFailed;
+        }
+    }
+
+    /// Unregister graphics resource
+    pub fn unregisterGraphicsResource(self: *const Cuda, resource: CudaGraphicsResource) !void {
+        if (!self.initialized) {
+            return error.CudaNotInitialized;
+        }
+
+        const err = cuda_graphics_unregister_resource(resource.resource);
+        if (err != .Success) {
+            return error.CudaUnregisterResourceFailed;
+        }
+    }
 };
 
 test "Cuda initialization" {
@@ -342,3 +414,15 @@ test "Cuda filter operation" {
     // Verify result
     try std.testing.expectEqual(@as(i32, 523), count);
 }
+
+/// CUDA Graphics Resource
+pub const CudaGraphicsResource = struct {
+    resource: ?*anyopaque,
+};
+
+/// Mapped Graphics Resource
+pub const MappedResource = struct {
+    device_ptr: ?*anyopaque,
+    size: usize,
+    resource: CudaGraphicsResource,
+};

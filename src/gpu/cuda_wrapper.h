@@ -4,6 +4,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// OpenGL type definitions
+#ifndef GEEQODB_NO_GL
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
+#else
+// Define OpenGL types if not including GL headers
+typedef unsigned int GLuint;
+#endif
+
+// CUDA driver API types
+// Define CUDA types without requiring actual CUDA headers
+// This allows the code to compile without CUDA installed
+#define GEEQODB_NO_CUDA
+#ifndef GEEQODB_NO_CUDA
+#include <cuda.h>
+#else
+// Define CUDA types if not including CUDA headers
+typedef struct CUgraphicsResource_st *CUgraphicsResource;
+typedef struct CUstream_st *CUstream;
+typedef void *CUdeviceptr;
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -101,7 +126,7 @@ extern "C"
     // Copy data from device to host
     CudaError cuda_copy_to_host(CudaBuffer buffer, void *host_ptr, size_t size);
 
-    // Execute filter operation on the GPU
+    // Execute filter operation on the GPU (simulation)
     CudaError cuda_execute_filter(
         CudaBuffer input,
         CudaBuffer output,
@@ -110,6 +135,35 @@ extern "C"
         void *value,
         void *value2 // For BETWEEN operations
     );
+
+    // Execute filter operation on the GPU (real implementation)
+    CudaError cuda_execute_filter_real(
+        CudaBuffer input,
+        CudaBuffer output,
+        CudaComparisonOp op,
+        CudaDataType data_type,
+        void *value,
+        void *value2, // For BETWEEN operations
+        size_t num_rows);
+
+    // Execute hash join operation on the GPU
+    CudaError cuda_execute_hash_join(
+        CudaBuffer left_keys,
+        CudaBuffer left_values,
+        CudaBuffer right_keys,
+        CudaBuffer right_values,
+        CudaBuffer output_keys,
+        CudaBuffer output_left_values,
+        CudaBuffer output_right_values,
+        size_t left_size,
+        size_t right_size);
+
+    // Execute window function on the GPU
+    CudaError cuda_execute_window_function(
+        CudaBuffer input,
+        CudaBuffer output,
+        CudaDataType data_type,
+        size_t num_rows);
 
     // Execute join operation on the GPU
     CudaError cuda_execute_join(
@@ -149,6 +203,14 @@ extern "C"
 
     // Get error string
     const char *cuda_get_error_string(CudaError error);
+
+    // OpenGL interoperability functions
+    CudaError cuda_gl_register_buffer(GLuint buffer, CUgraphicsResource *resource);
+    CudaError cuda_graphics_map_resources(CUgraphicsResource resource, CUstream stream);
+    CudaError cuda_graphics_get_mapped_pointer(CUdeviceptr *devPtr, size_t *size,
+                                               CUgraphicsResource resource);
+    CudaError cuda_graphics_unmap_resources(CUgraphicsResource resource, CUstream stream);
+    CudaError cuda_graphics_unregister_resource(CUgraphicsResource resource);
 
 #ifdef __cplusplus
 }

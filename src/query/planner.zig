@@ -11,6 +11,8 @@ pub const PhysicalNodeType = enum {
     Sort,
     Limit,
     Aggregate,
+    GroupBy,
+    Window,
 };
 const std = @import("std");
 const assert = @import("../build_options.zig").assert;
