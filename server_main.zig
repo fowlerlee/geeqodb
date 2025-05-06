@@ -1,11 +1,9 @@
 const std = @import("std");
 const geeqodb = @import("src/main.zig");
-const core = geeqodb.core;
+const database = geeqodb.core;
 const server = geeqodb.server;
 
 pub fn main() !void {
-    std.debug.print("GeeqoDB - Starting database server\n", .{});
-
     // Initialize allocator
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -17,13 +15,42 @@ pub fn main() !void {
 
     // Initialize database
     std.debug.print("Initializing database...\n", .{});
-    const db = try core.init(allocator, data_dir);
+    const db = try database.init(allocator, data_dir);
     defer db.deinit();
     std.debug.print("Database initialized successfully!\n", .{});
 
+    // Run a test query
+    std.debug.print("\nRunning test query: SELECT * FROM users\n", .{});
+    var result_set = try db.execute("SELECT * FROM users");
+    defer result_set.deinit();
+
+    // Display the result columns
+    std.debug.print("Columns: ", .{});
+    for (result_set.columns) |column| {
+        std.debug.print("{s} ", .{column.name});
+    }
+    std.debug.print("\n", .{});
+
+    // Display the result rows
+    std.debug.print("Rows: {d}\n", .{result_set.row_count});
+    for (0..result_set.row_count) |row_idx| {
+        std.debug.print("Row {d}: ", .{row_idx});
+        for (0..result_set.columns.len) |col_idx| {
+            const value = result_set.getValue(row_idx, col_idx);
+            switch (value) {
+                .integer => |i| std.debug.print("{d} ", .{i}),
+                .float => |f| std.debug.print("{d:.4} ", .{f}),
+                .text => |t| std.debug.print("{s} ", .{t}),
+                .boolean => |b| std.debug.print("{} ", .{b}),
+                .null => std.debug.print("NULL ", .{}),
+            }
+        }
+        std.debug.print("\n", .{});
+    }
+
     // Initialize server
     const port: u16 = 5252;
-    std.debug.print("Starting database server on port {d}...\n", .{port});
+    std.debug.print("\nStarting database server on port {d}...\n", .{port});
     const db_server = try server.DatabaseServer.init(allocator, db, port);
     defer db_server.deinit();
 

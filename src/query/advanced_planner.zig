@@ -284,13 +284,11 @@ pub const AdvancedQueryPlanner = struct {
         physical_plan.* = PhysicalPlan{
             .allocator = self.allocator,
             .node_type = .TableScan,
-            .access_method = .TableScan,
             .table_name = if (logical_plan.table_name) |name| try self.allocator.dupe(u8, name) else null,
             .predicates = null,
             .columns = null,
             .children = null,
-            .use_gpu = false,
-            .parallel_degree = 1,
+            .index_info = null,
         };
 
         // Copy predicates if any
@@ -319,11 +317,15 @@ pub const AdvancedQueryPlanner = struct {
 
         // Process children recursively
         if (logical_plan.children) |children| {
-            // Allocate an array of pointers to PhysicalPlan
-            var new_children = try self.allocator.alloc(*PhysicalPlan, children.len);
+            // Allocate an array of PhysicalPlan
+            var new_children = try self.allocator.alloc(PhysicalPlan, children.len);
             for (children, 0..) |*child, i| {
                 // Create a new physical plan for the child
-                new_children[i] = try self.createPhysicalPlan(child);
+                const child_plan = try self.createPhysicalPlan(child);
+                // Copy the physical plan to the array
+                new_children[i] = child_plan.*;
+                // Free the temporary plan
+                self.allocator.destroy(child_plan);
             }
             physical_plan.children = new_children;
         }
@@ -332,24 +334,30 @@ pub const AdvancedQueryPlanner = struct {
         switch (logical_plan.node_type) {
             .Scan => {
                 physical_plan.node_type = .TableScan;
-                physical_plan.access_method = .TableScan;
 
                 // Check if we can use an index
                 if (logical_plan.table_name != null and logical_plan.predicates != null) {
                     for (logical_plan.predicates.?) |pred| {
                         {
-                            if (try self.base_planner.findBestIndex(logical_plan.table_name.?, pred.column)) |_| {
+                            if (try self.base_planner.findBestIndex(logical_plan.table_name.?, pred.column)) |best_index| {
+                                // Create index info
+                                const index_info = try self.allocator.create(planner.IndexInfo);
+                                index_info.* = planner.IndexInfo{
+                                    .name = try std.fmt.allocPrint(self.allocator, "idx_{s}_{s}", .{ logical_plan.table_name.?, pred.column }),
+                                    .table_name = try self.allocator.dupe(u8, logical_plan.table_name.?),
+                                    .column_name = try self.allocator.dupe(u8, pred.column),
+                                    .index_type = best_index.index_type,
+                                };
+                                physical_plan.index_info = index_info;
+
                                 if (pred.op == .Eq) {
                                     physical_plan.node_type = .IndexSeek;
-                                    physical_plan.access_method = .IndexSeek;
                                 } else if (pred.op == .Gt or pred.op == .Lt or
                                     pred.op == .Ge or pred.op == .Le)
                                 {
                                     physical_plan.node_type = .IndexRangeScan;
-                                    physical_plan.access_method = .IndexRange;
                                 } else {
                                     physical_plan.node_type = .IndexScan;
-                                    physical_plan.access_method = .TableScan;
                                 }
                                 break;
                             }
@@ -393,8 +401,10 @@ pub const AdvancedQueryPlanner = struct {
 
         // Recursively apply to children
         if (physical_plan.children) |children| {
-            for (children) |child| {
-                try self.optimizePhysical(child);
+            for (0..children.len) |i| {
+                // Create a temporary pointer to the child plan in the array
+                const child_ptr = &physical_plan.children.?[i];
+                try self.optimizePhysical(child_ptr);
             }
         }
     }
@@ -405,7 +415,7 @@ pub const AdvancedQueryPlanner = struct {
         if (physical_plan.node_type != .Filter or physical_plan.children == null or physical_plan.children.?.len == 0) {
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |child| {
+                for (children) |*child| {
                     try self.applyPhysicalPredicatePushdown(child);
                 }
             }
@@ -424,10 +434,10 @@ pub const AdvancedQueryPlanner = struct {
 
                     // Find child node for this table
                     if (physical_plan.children) |children| {
-                        for (children) |child| {
+                        for (children) |*child| {
                             if (child.node_type == .NestedLoopJoin and child.children != null and child.children.?.len > 0) {
                                 // If the child is a join, check its children
-                                for (child.children.?) |join_child| {
+                                for (child.children.?) |*join_child| {
                                     if (join_child.table_name != null and std.mem.eql(u8, join_child.table_name.?, table_name)) {
                                         // Create a new predicate for the join child
                                         const new_pred = planner.Predicate{
@@ -489,7 +499,7 @@ pub const AdvancedQueryPlanner = struct {
 
         // Recursively apply to children
         if (physical_plan.children) |children| {
-            for (children) |child| {
+            for (children) |*child| {
                 try self.applyPhysicalPredicatePushdown(child);
             }
         }

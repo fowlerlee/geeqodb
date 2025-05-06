@@ -27,13 +27,12 @@ test "Database execute query" {
 
     // Execute a simple query
     var result_set = try db.execute("SELECT * FROM test");
+    defer result_set.deinit();
 
     // Verify the result set
-    try testing.expectEqual(@as(usize, 0), result_set.columns.len);
-    try testing.expectEqual(@as(usize, 0), result_set.row_count);
-
-    // Call deinit on the result set
-    result_set.deinit();
+    // Since our implementation now returns info for unknown tables
+    try testing.expectEqual(@as(usize, 1), result_set.columns.len);
+    try testing.expectEqualStrings("info", result_set.columns[0].name);
 }
 
 test "Database initialization with empty data directory" {

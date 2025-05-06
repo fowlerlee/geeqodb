@@ -1,6 +1,8 @@
 const std = @import("std");
 const OLAPDatabase = @import("../core/database.zig").OLAPDatabase;
-const ResultSet = @import("../query/result.zig").ResultSet;
+const result = @import("../query/result.zig");
+const ResultSet = result.ResultSet;
+const Value = result.Value;
 const assert = @import("../build_options.zig").assert;
 
 /// Database server that listens for SQL queries over TCP
@@ -146,9 +148,54 @@ pub const DatabaseServer = struct {
 
     /// Format a result set as a string
     fn formatResultSet(allocator: std.mem.Allocator, result_set: ResultSet) ![]const u8 {
-        // For now, just return a simple success message
-        // In a real implementation, this would format the result set as a table
-        return try std.fmt.allocPrint(allocator, "SUCCESS: Query executed successfully. Rows: {d}\n", .{result_set.row_count});
+        // If there are no columns, return a simple message
+        if (result_set.columns.len == 0) {
+            return try std.fmt.allocPrint(allocator, "Query executed successfully. No results.\n", .{});
+        }
+
+        // Create a buffer for the formatted output
+        var buffer = std.ArrayList(u8).init(allocator);
+        defer buffer.deinit();
+
+        // Add column headers
+        try buffer.appendSlice("| ");
+        for (result_set.columns) |column| {
+            try buffer.writer().print("{s} | ", .{column.name});
+        }
+        try buffer.appendSlice("\n");
+
+        // Add a separator line
+        try buffer.appendSlice("|-");
+        for (result_set.columns) |column| {
+            for (0..column.name.len) |_| {
+                try buffer.appendSlice("-");
+            }
+            try buffer.appendSlice("-|-");
+        }
+        try buffer.appendSlice("\n");
+
+        // Add rows
+        for (0..result_set.row_count) |row_idx| {
+            try buffer.appendSlice("| ");
+            for (0..result_set.columns.len) |col_idx| {
+                const value = result_set.getValue(row_idx, col_idx);
+                switch (value) {
+                    .integer => |i| try buffer.writer().print("{d}", .{i}),
+                    .float => |f| try buffer.writer().print("{d:.4}", .{f}),
+                    .text => |t| try buffer.writer().print("{s}", .{t}),
+                    .boolean => |b| try buffer.writer().print("{}", .{b}),
+                    .null => try buffer.writer().print("NULL", .{}),
+                }
+                try buffer.appendSlice(" | ");
+            }
+            try buffer.appendSlice("\n");
+        }
+
+        // Add row count summary
+        try buffer.writer().print("\n{d} row(s) returned\n", .{result_set.row_count});
+
+        // Return the formatted string
+        return buffer.toOwnedSlice();
     }
 
     /// Stop the server

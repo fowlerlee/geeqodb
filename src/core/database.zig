@@ -26,11 +26,8 @@ pub const OLAPDatabase = struct {
         // Validate inputs
         assert(query.len > 0); // Query should not be empty
 
-        // For testing purposes, return an empty result set that's compatible with the ResultSet structure in result.zig
-        return ResultSet.init(self.allocator, 0, 0) catch |err| {
-            std.log.err("Failed to initialize result set: {}", .{err});
-            return err;
-        };
+        // Execute the query using the database context
+        return try self.db_context.executeRaw(query);
     }
 
     /// Deinitialize the database
