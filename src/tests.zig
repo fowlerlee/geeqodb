@@ -8,6 +8,7 @@ pub const storage = struct {
     pub const index = @import("storage/index.zig");
     pub const btree_index = @import("storage/btree_index.zig");
     pub const skiplist_index = @import("storage/skiplist_index.zig");
+    pub const distributed_wal = @import("storage/distributed_wal.zig");
 };
 pub const query = struct {
     pub const planner = @import("query/planner.zig");
@@ -16,6 +17,10 @@ pub const query = struct {
 };
 pub const transaction = struct {
     pub const manager = @import("transaction/manager.zig");
+};
+pub const replication = struct {
+    pub const replica_management = @import("simulation/scenarios/replica_management.zig");
+    pub const view_change_protocol = @import("simulation/scenarios/view_change_protocol.zig");
 };
 
 // Import the tests
@@ -31,6 +36,9 @@ pub const tests = struct {
     pub const query_index = @import("tests/query/index_query_test.zig");
     pub const transaction_manager = @import("tests/transaction/manager_test.zig");
     pub const replication_vr = @import("tests/replication/vr_test.zig");
+    pub const replication_replica_management = @import("tests/replication/replica_management_test.zig");
+    pub const replication_view_change = @import("tests/replication/view_change_test.zig");
+    pub const replication_distributed_log = @import("tests/replication/distributed_log_test.zig");
 };
 
 test {

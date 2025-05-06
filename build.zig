@@ -16,6 +16,30 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-std=c11"},
     });
 
+    // Create modules for simulation components
+    const simulation_module = b.addModule("simulation", .{
+        .root_source_file = b.path("src/simulation/simulation.zig"),
+    });
+
+    const replica_management_module = b.addModule("replica_management", .{
+        .root_source_file = b.path("src/simulation/scenarios/replica_management.zig"),
+    });
+
+    const view_change_module = b.addModule("view_change", .{
+        .root_source_file = b.path("src/simulation/scenarios/view_change_protocol.zig"),
+    });
+
+    const distributed_wal_module = b.addModule("distributed_wal", .{
+        .root_source_file = b.path("src/storage/distributed_wal.zig"),
+    });
+
+    // Add dependencies between modules
+    view_change_module.addImport("replica_management", replica_management_module);
+    view_change_module.addImport("simulation", simulation_module);
+
+    distributed_wal_module.addImport("simulation", simulation_module);
+    distributed_wal_module.addImport("replica_management", replica_management_module);
+
     // Add RocksDB dependency
     const rocksdb_lib = b.addStaticLibrary(.{
         .name = "rocksdb",
@@ -82,6 +106,35 @@ pub fn build(b: *std.Build) void {
     database_test.root_module.addImport("geeqodb", geeqodb_module);
     database_test.linkSystemLibrary("rocksdb");
 
+    // Add replication tests
+    const replica_management_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/replication/replica_management_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    replica_management_test.root_module.addImport("geeqodb", geeqodb_module);
+    replica_management_test.root_module.addImport("replica_management", replica_management_module);
+
+    const view_change_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/replication/view_change_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    view_change_test.root_module.addImport("geeqodb", geeqodb_module);
+    view_change_test.root_module.addImport("simulation", simulation_module);
+    view_change_test.root_module.addImport("replica_management", replica_management_module);
+    view_change_test.root_module.addImport("view_change", view_change_module);
+
+    const distributed_log_test = b.addTest(.{
+        .root_source_file = b.path("src/tests/replication/distributed_log_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    distributed_log_test.root_module.addImport("geeqodb", geeqodb_module);
+    distributed_log_test.root_module.addImport("simulation", simulation_module);
+    distributed_log_test.root_module.addImport("replica_management", replica_management_module);
+    distributed_log_test.root_module.addImport("distributed_wal", distributed_wal_module);
+
     // Create test steps
     const run_planner_tests = b.addRunArtifact(planner_test);
     run_planner_tests.has_side_effects = true;
@@ -104,6 +157,15 @@ pub fn build(b: *std.Build) void {
     const run_database_tests = b.addRunArtifact(database_test);
     run_database_tests.has_side_effects = true;
 
+    const run_replica_management_tests = b.addRunArtifact(replica_management_test);
+    run_replica_management_tests.has_side_effects = true;
+
+    const run_view_change_tests = b.addRunArtifact(view_change_test);
+    run_view_change_tests.has_side_effects = true;
+
+    const run_distributed_log_tests = b.addRunArtifact(distributed_log_test);
+    run_distributed_log_tests.has_side_effects = true;
+
     // Add test steps to the main test step
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_planner_tests.step);
@@ -113,6 +175,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_cuda_kernels_tests.step);
     test_step.dependOn(&run_rocksdb_tests.step);
     test_step.dependOn(&run_database_tests.step);
+    test_step.dependOn(&run_replica_management_tests.step);
+    test_step.dependOn(&run_view_change_tests.step);
+    test_step.dependOn(&run_distributed_log_tests.step);
 
     // Add a separate step for database tests only
     const database_test_step = b.step("test-database", "Run database tests only");
@@ -130,6 +195,12 @@ pub fn build(b: *std.Build) void {
     const gpu_test_step = b.step("test-gpu", "Run GPU tests only");
     gpu_test_step.dependOn(&run_gpu_tests.step);
     gpu_test_step.dependOn(&run_cuda_kernels_tests.step);
+
+    // Add a separate step for replication tests only
+    const replication_test_step = b.step("test-replication", "Run replication tests only");
+    replication_test_step.dependOn(&run_replica_management_tests.step);
+    replication_test_step.dependOn(&run_view_change_tests.step);
+    replication_test_step.dependOn(&run_distributed_log_tests.step);
 
     const tools_step = b.step("tools", "Build all tools in the src/tools directory");
 
