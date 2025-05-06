@@ -35,6 +35,8 @@ pub const Scheduler = struct {
 
     /// Deinitialize the scheduler
     pub fn deinit(self: *Scheduler) void {
+        // We don't free task contexts here because we don't know their types
+        // The simulation should clear tasks before deinit
         self.tasks.deinit();
         self.allocator.destroy(self);
     }
@@ -140,6 +142,12 @@ pub const Scheduler = struct {
         const max_u64: u64 = std.math.maxInt(u64);
         const random_u64 = self.getRandomInt(max_u64);
         return @as(f64, @floatFromInt(random_u64)) / @as(f64, @floatFromInt(max_u64));
+    }
+
+    /// Clear all tasks from the scheduler
+    /// This is useful for cleaning up before deinit to avoid memory leaks
+    pub fn clearAllTasks(self: *Scheduler) void {
+        self.tasks.clearRetainingCapacity();
     }
 
     /// Compare tasks for sorting (by time, then by priority)

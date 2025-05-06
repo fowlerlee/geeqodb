@@ -43,16 +43,23 @@ pub const Statistics = struct {
 
     /// Clean up resources
     pub fn deinit(self: *Statistics) void {
-        // Free histogram memory for each column
+        // Free table statistics keys
+        var table_it = self.table_stats.iterator();
+        while (table_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.table_stats.deinit();
+
+        // Free column statistics keys and histograms
         var column_it = self.column_stats.iterator();
         while (column_it.next()) |entry| {
             if (entry.value_ptr.histogram) |histogram| {
                 self.allocator.free(histogram);
             }
+            self.allocator.free(entry.key_ptr.*);
         }
-
-        self.table_stats.deinit();
         self.column_stats.deinit();
+
         self.allocator.destroy(self);
     }
 

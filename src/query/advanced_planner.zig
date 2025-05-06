@@ -165,14 +165,16 @@ pub const AdvancedQueryPlanner = struct {
                                     for (child.children.?) |*join_child| {
                                         if (join_child.table_name != null and std.mem.eql(u8, join_child.table_name.?, table_name)) {
                                             // Create a new predicate for the join child
-                                            const new_pred = try self.allocator.create(planner.Predicate);
-                                            new_pred.* = pred;
-                                            new_pred.column = try self.allocator.dupe(u8, column_name);
+                                            const new_pred = planner.Predicate{
+                                                .column = try self.allocator.dupe(u8, column_name),
+                                                .op = pred.op,
+                                                .value = pred.value,
+                                            };
 
                                             // Add predicate to join child
                                             if (join_child.predicates == null) {
                                                 var new_preds = try self.allocator.alloc(planner.Predicate, 1);
-                                                new_preds[0] = new_pred.*;
+                                                new_preds[0] = new_pred;
                                                 join_child.predicates = new_preds;
                                             } else {
                                                 const old_preds = join_child.predicates.?;
@@ -180,7 +182,7 @@ pub const AdvancedQueryPlanner = struct {
                                                 for (old_preds, 0..) |old_pred, i| {
                                                     new_preds[i] = old_pred;
                                                 }
-                                                new_preds[old_preds.len] = new_pred.*;
+                                                new_preds[old_preds.len] = new_pred;
                                                 join_child.predicates = new_preds;
                                                 self.allocator.free(old_preds);
                                             }
@@ -190,14 +192,16 @@ pub const AdvancedQueryPlanner = struct {
                                     }
                                 } else if (child.table_name != null and std.mem.eql(u8, child.table_name.?, table_name)) {
                                     // Create a new predicate for the child
-                                    const new_pred = try self.allocator.create(planner.Predicate);
-                                    new_pred.* = pred;
-                                    new_pred.column = try self.allocator.dupe(u8, column_name);
+                                    const new_pred = planner.Predicate{
+                                        .column = try self.allocator.dupe(u8, column_name),
+                                        .op = pred.op,
+                                        .value = pred.value,
+                                    };
 
                                     // Add predicate to child
                                     if (child.predicates == null) {
                                         var new_preds = try self.allocator.alloc(planner.Predicate, 1);
-                                        new_preds[0] = new_pred.*;
+                                        new_preds[0] = new_pred;
                                         child.predicates = new_preds;
                                     } else {
                                         const old_preds = child.predicates.?;
@@ -205,7 +209,7 @@ pub const AdvancedQueryPlanner = struct {
                                         for (old_preds, 0..) |old_pred, i| {
                                             new_preds[i] = old_pred;
                                         }
-                                        new_preds[old_preds.len] = new_pred.*;
+                                        new_preds[old_preds.len] = new_pred;
                                         child.predicates = new_preds;
                                         self.allocator.free(old_preds);
                                     }
@@ -315,11 +319,11 @@ pub const AdvancedQueryPlanner = struct {
 
         // Process children recursively
         if (logical_plan.children) |children| {
-            var new_children = try self.allocator.alloc(PhysicalPlan, children.len);
+            // Allocate an array of pointers to PhysicalPlan
+            var new_children = try self.allocator.alloc(*PhysicalPlan, children.len);
             for (children, 0..) |*child, i| {
-                const child_plan = try self.createPhysicalPlan(child);
-                new_children[i] = child_plan.*;
-                self.allocator.destroy(child_plan);
+                // Create a new physical plan for the child
+                new_children[i] = try self.createPhysicalPlan(child);
             }
             physical_plan.children = new_children;
         }
@@ -384,10 +388,109 @@ pub const AdvancedQueryPlanner = struct {
 
         // For now, we'll just simulate the optimization
 
+        // Apply predicate pushdown to the physical plan
+        try self.applyPhysicalPredicatePushdown(physical_plan);
+
         // Recursively apply to children
         if (physical_plan.children) |children| {
-            for (children) |*child| {
+            for (children) |child| {
                 try self.optimizePhysical(child);
+            }
+        }
+    }
+
+    /// Apply predicate pushdown optimization to a physical plan
+    fn applyPhysicalPredicatePushdown(self: *AdvancedQueryPlanner, physical_plan: *PhysicalPlan) !void {
+        // Only apply to Filter nodes
+        if (physical_plan.node_type != .Filter or physical_plan.children == null or physical_plan.children.?.len == 0) {
+            // Recursively apply to children
+            if (physical_plan.children) |children| {
+                for (children) |child| {
+                    try self.applyPhysicalPredicatePushdown(child);
+                }
+            }
+            return;
+        }
+
+        // Move predicates from Filter to child nodes where possible
+        if (physical_plan.predicates) |predicates| {
+            for (predicates) |pred| {
+                // Check if predicate can be pushed down
+                if (std.mem.indexOf(u8, pred.column, ".") != null) {
+                    // Extract table name from column reference
+                    const dot_index = std.mem.indexOf(u8, pred.column, ".").?;
+                    const table_name = pred.column[0..dot_index];
+                    const column_name = pred.column[dot_index + 1 ..];
+
+                    // Find child node for this table
+                    if (physical_plan.children) |children| {
+                        for (children) |child| {
+                            if (child.node_type == .NestedLoopJoin and child.children != null and child.children.?.len > 0) {
+                                // If the child is a join, check its children
+                                for (child.children.?) |join_child| {
+                                    if (join_child.table_name != null and std.mem.eql(u8, join_child.table_name.?, table_name)) {
+                                        // Create a new predicate for the join child
+                                        const new_pred = planner.Predicate{
+                                            .column = try self.allocator.dupe(u8, column_name),
+                                            .op = pred.op,
+                                            .value = pred.value,
+                                        };
+
+                                        // Add predicate to join child
+                                        if (join_child.predicates == null) {
+                                            var new_preds = try self.allocator.alloc(planner.Predicate, 1);
+                                            new_preds[0] = new_pred;
+                                            join_child.predicates = new_preds;
+                                        } else {
+                                            const old_preds = join_child.predicates.?;
+                                            var new_preds = try self.allocator.alloc(planner.Predicate, old_preds.len + 1);
+                                            for (old_preds, 0..) |old_pred, i| {
+                                                new_preds[i] = old_pred;
+                                            }
+                                            new_preds[old_preds.len] = new_pred;
+                                            join_child.predicates = new_preds;
+                                            self.allocator.free(old_preds);
+                                        }
+
+                                        break;
+                                    }
+                                }
+                            } else if (child.table_name != null and std.mem.eql(u8, child.table_name.?, table_name)) {
+                                // Create a new predicate for the child
+                                const new_pred = planner.Predicate{
+                                    .column = try self.allocator.dupe(u8, column_name),
+                                    .op = pred.op,
+                                    .value = pred.value,
+                                };
+
+                                // Add predicate to child
+                                if (child.predicates == null) {
+                                    var new_preds = try self.allocator.alloc(planner.Predicate, 1);
+                                    new_preds[0] = new_pred;
+                                    child.predicates = new_preds;
+                                } else {
+                                    const old_preds = child.predicates.?;
+                                    var new_preds = try self.allocator.alloc(planner.Predicate, old_preds.len + 1);
+                                    for (old_preds, 0..) |old_pred, i| {
+                                        new_preds[i] = old_pred;
+                                    }
+                                    new_preds[old_preds.len] = new_pred;
+                                    child.predicates = new_preds;
+                                    self.allocator.free(old_preds);
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recursively apply to children
+        if (physical_plan.children) |children| {
+            for (children) |child| {
+                try self.applyPhysicalPredicatePushdown(child);
             }
         }
     }
@@ -405,7 +508,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |*child| {
+                for (children) |child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -438,7 +541,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |*child| {
+                for (children) |child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -461,7 +564,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |*child| {
+                for (children) |child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -479,7 +582,7 @@ pub const AdvancedQueryPlanner = struct {
 
         // Recursively apply to children
         if (physical_plan.children) |children| {
-            for (children) |*child| {
+            for (children) |child| {
                 try self.applyGpuAcceleration(child);
             }
         }

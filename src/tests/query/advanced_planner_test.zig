@@ -46,14 +46,21 @@ test "AdvancedQueryPlanner cost-based optimization" {
         .predicates = null,
         .children = null,
     };
+    defer {
+        if (logical_plan.table_name) |name| allocator.free(name);
+    }
 
     // Add a predicate for id = 2
     const pred = try allocator.alloc(planner.Predicate, 1);
+    defer allocator.free(pred);
+
     pred[0] = planner.Predicate{
         .column = try allocator.dupe(u8, "id"),
         .op = .Eq,
         .value = planner.PlanValue{ .Integer = 2 },
     };
+    defer allocator.free(pred[0].column);
+
     logical_plan.predicates = pred;
 
     // Register an index
@@ -87,6 +94,15 @@ test "AdvancedQueryPlanner join order optimization" {
         .predicates = null,
         .children = try allocator.alloc(LogicalPlan, 2),
     };
+    defer {
+        // Free the children array
+        if (logical_plan.children) |children| {
+            // Free the table_name in each child
+            if (children[0].table_name) |name| allocator.free(name);
+            if (children[1].table_name) |name| allocator.free(name);
+            allocator.free(children);
+        }
+    }
 
     // Create left child (users table)
     logical_plan.children.?[0] = LogicalPlan{
@@ -114,8 +130,7 @@ test "AdvancedQueryPlanner join order optimization" {
 
     // Optimize the plan
     const physical_plan = try advanced_query_planner.optimize(logical_plan);
-    // Note: We're not calling deinit() on physical_plan because it's causing memory issues
-    // The memory will be cleaned up when the test exits
+    defer physical_plan.deinit();
 
     // Verify that the optimizer chose the smaller table as the left side of the join
     try testing.expectEqualStrings("users", physical_plan.children.?[0].table_name.?);
@@ -147,14 +162,16 @@ test "AdvancedQueryPlanner GPU acceleration" {
         .predicates = null,
         .children = null,
     };
+    defer {
+        if (logical_plan.table_name) |name| allocator.free(name);
+    }
 
     // Add statistics for the table (large table)
     try advanced_query_planner.statistics.?.addTableStatistics("large_table", 10000000);
 
     // Optimize the plan
     const physical_plan = try advanced_query_planner.optimize(logical_plan);
-    // Note: We're not calling deinit() on physical_plan because it's causing memory issues
-    // The memory will be cleaned up when the test exits
+    defer physical_plan.deinit();
 
     // Verify that the optimizer chose GPU acceleration
     try testing.expect(physical_plan.use_gpu);
@@ -178,6 +195,11 @@ test "AdvancedQueryPlanner predicate pushdown" {
         .op = .Eq,
         .value = planner.PlanValue{ .Integer = 2 },
     };
+    defer {
+        // Free the predicate column
+        allocator.free(predicates[0].column);
+        allocator.free(predicates);
+    }
 
     logical_plan.* = LogicalPlan{
         .allocator = allocator,
@@ -187,6 +209,18 @@ test "AdvancedQueryPlanner predicate pushdown" {
         .predicates = predicates,
         .children = try allocator.alloc(LogicalPlan, 1),
     };
+    defer {
+        // Free the children arrays at each level
+        if (logical_plan.children) |children| {
+            if (children[0].children) |join_children| {
+                // Free the table_name in each join child
+                if (join_children[0].table_name) |name| allocator.free(name);
+                if (join_children[1].table_name) |name| allocator.free(name);
+                allocator.free(join_children);
+            }
+            allocator.free(children);
+        }
+    }
 
     // Create child (join)
     logical_plan.children.?[0] = LogicalPlan{
@@ -221,8 +255,6 @@ test "AdvancedQueryPlanner predicate pushdown" {
     // Optimize the plan
     const physical_plan = try advanced_query_planner.optimize(logical_plan);
     defer physical_plan.deinit();
-    // Note: We're not calling deinit() on physical_plan because it's causing memory issues
-    // The memory will be cleaned up when the test exits
 
     // Verify that the predicate was pushed down to the users table
     // The physical plan structure is:
@@ -230,7 +262,22 @@ test "AdvancedQueryPlanner predicate pushdown" {
     // └── children[0] (Join)
     //     ├── children[0] (users table)
     //     └── children[1] (orders table)
+
+    // Check that the plan was created successfully
+    try testing.expect(physical_plan.children != null);
+    try testing.expect(physical_plan.children.?[0].children != null);
+
+    // Check that the join node has two children
+    try testing.expectEqual(@as(usize, 1), physical_plan.children.?.len);
+    try testing.expectEqual(@as(usize, 2), physical_plan.children.?[0].children.?.len);
+
+    // Check that the first child of the join is the users table
+    try testing.expectEqualStrings("users", physical_plan.children.?[0].children.?[0].table_name.?);
+
+    // Check that the users table has a predicate
     try testing.expect(physical_plan.children.?[0].children.?[0].predicates != null);
+
+    // Check that the predicate is for the "id" column
     try testing.expectEqualStrings("id", physical_plan.children.?[0].children.?[0].predicates.?[0].column);
 }
 
@@ -253,14 +300,16 @@ test "AdvancedQueryPlanner parallel execution planning" {
         .predicates = null,
         .children = null,
     };
+    defer {
+        if (logical_plan.table_name) |name| allocator.free(name);
+    }
 
     // Add statistics for the table (large table)
     try advanced_query_planner.statistics.?.addTableStatistics("large_table", 10000000);
 
     // Optimize the plan
     const physical_plan = try advanced_query_planner.optimize(logical_plan);
-    // Note: We're not calling deinit() on physical_plan because it's causing memory issues
-    // The memory will be cleaned up when the test exits
+    defer physical_plan.deinit();
 
     // Verify that the optimizer chose parallel execution
     try testing.expect(physical_plan.parallel_degree > 1);

@@ -314,7 +314,7 @@ pub const PhysicalPlan = struct {
     table_name: ?[]const u8,
     predicates: ?[]const Predicate,
     columns: ?[]const []const u8,
-    children: ?[]PhysicalPlan,
+    children: ?[]*PhysicalPlan,
     use_gpu: bool = false,
     parallel_degree: u32 = 1,
     index_info: ?struct {
@@ -343,7 +343,9 @@ pub const PhysicalPlan = struct {
             self.allocator.free(cols);
         }
         if (self.children) |kids| {
-            for (kids) |*child| {
+            for (kids) |child| {
+                // Just call deinit on each child
+                // The recursive nature of deinit will handle freeing all memory
                 child.deinit();
             }
             self.allocator.free(kids);

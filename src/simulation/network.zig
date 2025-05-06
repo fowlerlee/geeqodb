@@ -48,6 +48,10 @@ pub const SimulatedNetwork = struct {
 
     /// Deinitialize the network
     pub fn deinit(self: *SimulatedNetwork) void {
+        // First, clear all tasks from the scheduler to prevent memory leaks
+        // from message contexts that haven't been delivered yet
+        self.scheduler.clearAllTasks();
+
         var node_it = self.nodes.iterator();
         while (node_it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
@@ -215,8 +219,12 @@ pub const SimulatedNetwork = struct {
 
 /// Callback for delivering messages
 fn deliverMessageCallback(context: ?*anyopaque) void {
+    // Safety check: if context is null, just return
+    if (context == null) return;
+
     const ctx = @as(*SimulatedNetwork.MessageContext, @ptrCast(@alignCast(context.?)));
     defer {
+        // Always free the message and context to prevent memory leaks
         ctx.network.allocator.free(ctx.message);
         ctx.network.allocator.destroy(ctx);
     }
@@ -226,6 +234,8 @@ fn deliverMessageCallback(context: ?*anyopaque) void {
         // Deliver the message
         node_info.handler(ctx.sender, ctx.message, node_info.context);
     }
+    // If recipient doesn't exist, the message is simply dropped
+    // (the memory is still freed in the defer block)
 }
 
 test "SimulatedNetwork basic functionality" {

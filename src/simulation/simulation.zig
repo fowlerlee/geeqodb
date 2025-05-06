@@ -53,10 +53,17 @@ pub const Simulation = struct {
         self.clocks.deinit();
 
         // Clean up network and scheduler
+        // Note: network.deinit() will call scheduler.clearAllTasks() to prevent memory leaks
         self.network.deinit();
         self.scheduler.deinit();
 
         self.allocator.destroy(self);
+    }
+
+    /// Clear all pending tasks in the scheduler
+    /// This is useful for cleaning up before deinit to avoid memory leaks
+    pub fn clearAllTasks(self: *Simulation) void {
+        self.scheduler.clearAllTasks();
     }
 
     /// Create a new virtual clock for a node
