@@ -486,11 +486,18 @@ test "Query planner access method selection" {
 pub const PhysicalPlan = struct {
     allocator: std.mem.Allocator,
     node_type: PhysicalNodeType,
+    access_method: AccessMethod = .TableScan,
     table_name: ?[]const u8 = null,
     index_info: ?*IndexInfo = null,
     predicates: ?[]const Predicate = null,
     columns: ?[]const []const u8 = null,
     children: ?[]PhysicalPlan = null,
+    use_gpu: bool = false,
+    parallel_degree: u8 = 1,
+    parallel_fragment_id: u8 = 0,
+    parallel_fragment_count: u8 = 1,
+    parallel_range_start: u64 = 0,
+    parallel_range_end: u64 = 0,
 
     pub fn deinit(self: *PhysicalPlan) void {
         if (self.table_name) |name| {

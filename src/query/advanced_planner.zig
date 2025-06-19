@@ -518,7 +518,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |child| {
+                for (children) |*child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -551,7 +551,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |child| {
+                for (children) |*child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -574,7 +574,7 @@ pub const AdvancedQueryPlanner = struct {
 
             // Recursively apply to children
             if (physical_plan.children) |children| {
-                for (children) |child| {
+                for (children) |*child| {
                     try self.applyGpuAcceleration(child);
                 }
             }
@@ -592,7 +592,7 @@ pub const AdvancedQueryPlanner = struct {
 
         // Recursively apply to children
         if (physical_plan.children) |children| {
-            for (children) |child| {
+            for (children) |*child| {
                 try self.applyGpuAcceleration(child);
             }
         }

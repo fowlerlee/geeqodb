@@ -21,31 +21,38 @@ pub fn main() !void {
 
     // Run a test query
     std.debug.print("\nRunning test query: SELECT * FROM users\n", .{});
-    var result_set = try db.execute("SELECT * FROM users");
-    defer result_set.deinit();
-
-    // Display the result columns
-    std.debug.print("Columns: ", .{});
-    for (result_set.columns) |column| {
-        std.debug.print("{s} ", .{column.name});
-    }
-    std.debug.print("\n", .{});
-
-    // Display the result rows
-    std.debug.print("Rows: {d}\n", .{result_set.row_count});
-    for (0..result_set.row_count) |row_idx| {
-        std.debug.print("Row {d}: ", .{row_idx});
-        for (0..result_set.columns.len) |col_idx| {
-            const value = result_set.getValue(row_idx, col_idx);
-            switch (value) {
-                .integer => |i| std.debug.print("{d} ", .{i}),
-                .float => |f| std.debug.print("{d:.4} ", .{f}),
-                .text => |t| std.debug.print("{s} ", .{t}),
-                .boolean => |b| std.debug.print("{} ", .{b}),
-                .null => std.debug.print("NULL ", .{}),
-            }
+    const test_query_result = db.execute("SELECT * FROM users");
+    if (test_query_result) |result_set| {
+        var mutable_result_set = result_set;
+        defer mutable_result_set.deinit();
+        // Display the result columns
+        std.debug.print("Columns: ", .{});
+        for (mutable_result_set.columns) |column| {
+            std.debug.print("{s} ", .{column.name});
         }
         std.debug.print("\n", .{});
+        // Display the result rows
+        std.debug.print("Rows: {d}\n", .{mutable_result_set.row_count});
+        for (0..mutable_result_set.row_count) |row_idx| {
+            std.debug.print("Row {d}: ", .{row_idx});
+            for (0..mutable_result_set.columns.len) |col_idx| {
+                const value = mutable_result_set.getValue(row_idx, col_idx);
+                switch (value) {
+                    .integer => |i| std.debug.print("{d} ", .{i}),
+                    .float => |f| std.debug.print("{d:.4} ", .{f}),
+                    .text => |t| std.debug.print("{s} ", .{t}),
+                    .boolean => |b| std.debug.print("{} ", .{b}),
+                    .null => std.debug.print("NULL ", .{}),
+                }
+            }
+            std.debug.print("\n", .{});
+        }
+    } else |err| {
+        if (err == error.TableNotFound) {
+            std.debug.print("Test query failed: users table does not exist.\n", .{});
+        } else {
+            std.debug.print("Test query failed with error: {s}\n", .{@errorName(err)});
+        }
     }
 
     // Initialize server

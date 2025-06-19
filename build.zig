@@ -48,8 +48,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     rocksdb_lib.linkSystemLibrary("rocksdb");
-    rocksdb_lib.addIncludePath(b.path("deps/rocksdb/include"));
-    rocksdb_lib.addLibraryPath(b.path("deps/rocksdb/lib"));
 
     // Add tests for individual modules
     const planner_test = b.addTest(.{
@@ -203,6 +201,17 @@ pub fn build(b: *std.Build) void {
     replication_test_step.dependOn(&run_distributed_log_tests.step);
 
     const tools_step = b.step("tools", "Build all tools in the src/tools directory");
+
+    // Build main geeqodb executable
+    const geeqodb_exe = b.addExecutable(.{
+        .name = "geeqodb",
+        .root_source_file = b.path("server_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    geeqodb_exe.root_module.addImport("geeqodb", geeqodb_module);
+    geeqodb_exe.linkSystemLibrary("rocksdb");
+    b.installArtifact(geeqodb_exe);
 
     // Build SQL client tool
     const sql_client = b.addExecutable(.{

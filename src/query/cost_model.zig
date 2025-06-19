@@ -82,7 +82,7 @@ pub const CostModel = struct {
 
         // Add costs for child nodes
         if (plan.children) |children| {
-            for (children) |child| {
+            for (children) |*child| {
                 cost += try self.estimatePhysicalPlanCost(child, use_gpu);
             }
         }

@@ -55,41 +55,60 @@ pub const RocksDB = struct {
 
     /// Open the database
     pub fn open(self: *RocksDB) !void {
+        // Ensure the data directory exists
+        try std.fs.cwd().makePath(self.data_dir);
+
+        std.debug.print("Opening RocksDB at path: {s}\n", .{self.data_dir});
+
         // Create options
         self.options = c.rocksdb_options_create();
-        if (self.options == null) return error.RocksDBOpenFailed;
+        if (self.options == null) {
+            std.debug.print("Failed to create RocksDB options\n", .{});
+            return error.RocksDBOpenFailed;
+        }
         errdefer if (self.options) |options| c.rocksdb_options_destroy(options);
 
         c.rocksdb_options_set_create_if_missing(self.options, 1);
 
         // Create read/write options
         self.write_options = c.rocksdb_writeoptions_create();
-        if (self.write_options == null) return error.RocksDBOpenFailed;
+        if (self.write_options == null) {
+            std.debug.print("Failed to create RocksDB write options\n", .{});
+            return error.RocksDBOpenFailed;
+        }
         errdefer if (self.write_options) |write_options| c.rocksdb_writeoptions_destroy(write_options);
 
         self.read_options = c.rocksdb_readoptions_create();
-        if (self.read_options == null) return error.RocksDBOpenFailed;
+        if (self.read_options == null) {
+            std.debug.print("Failed to create RocksDB read options\n", .{});
+            return error.RocksDBOpenFailed;
+        }
         errdefer if (self.read_options) |read_options| c.rocksdb_readoptions_destroy(read_options);
 
-        // Create a null-terminated copy of the data directory path
+        std.debug.print("Calling rocksdb_open with path: {s}\n", .{self.data_dir});
+
+        // Open database - create a null-terminated string for RocksDB
         const data_dir_c = try self.allocator.alloc(u8, self.data_dir.len + 1);
         defer self.allocator.free(data_dir_c);
         @memcpy(data_dir_c[0..self.data_dir.len], self.data_dir);
         data_dir_c[self.data_dir.len] = 0;
 
-        // Open database
         var err_ptr: ?[*:0]u8 = null;
         self.db = c.rocksdb_open(self.options, @as([*:0]const u8, @ptrCast(data_dir_c.ptr)), &err_ptr);
 
         if (err_ptr != null) {
             const err_msg = std.mem.span(err_ptr.?);
             c.rocksdb_free(err_ptr);
-            std.log.err("Failed to open database: {s}", .{err_msg});
+            std.debug.print("Failed to open database: {s}\n", .{err_msg});
             return error.RocksDBOpenFailed;
         }
 
-        if (self.db == null) return error.RocksDBOpenFailed;
+        if (self.db == null) {
+            std.debug.print("RocksDB returned null database handle\n", .{});
+            return error.RocksDBOpenFailed;
+        }
 
+        std.debug.print("RocksDB opened successfully\n", .{});
         self.is_open = true;
     }
 

@@ -124,7 +124,7 @@ pub const ParallelPlanner = struct {
 
         // Recursively apply to child plans
         if (plan.children) |children| {
-            for (children) |child| {
+            for (children) |*child| {
                 try self.applyParallelism(child);
             }
         }

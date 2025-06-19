@@ -21,13 +21,25 @@ pub const OLAPDatabase = struct {
     txn_manager: *TransactionManager,
     db_context: *DatabaseContext,
 
+    pub const Error = error{
+        TableNotFound,
+    };
+
     /// Execute a SQL query and return a result set
     pub fn execute(self: *OLAPDatabase, query: []const u8) !ResultSet {
         // Validate inputs
         assert(query.len > 0); // Query should not be empty
 
-        // Execute the query using the database context
-        return try self.db_context.executeRaw(query);
+        // Try to execute the query using the database context
+        const result = self.db_context.executeRaw(query);
+        if (result) |res| {
+            return res;
+        } else |err| {
+            switch (err) {
+                error.IndexNotFound, error.MissingTableName => return error.TableNotFound,
+                else => return err,
+            }
+        }
     }
 
     /// Deinitialize the database
@@ -301,4 +313,13 @@ test "OLAPDatabase initialization" {
     try std.testing.expect(@intFromPtr(db.query_planner) != 0);
     try std.testing.expect(@intFromPtr(db.txn_manager) != 0);
     try std.testing.expect(@intFromPtr(db.db_context) != 0);
+}
+
+test "query on non-existent table returns error" {
+    const allocator = std.testing.allocator;
+    const db = try init(allocator, "test_data");
+    defer db.deinit();
+
+    const result = db.execute("SELECT * FROM users");
+    try std.testing.expectError(error.TableNotFound, result);
 }
