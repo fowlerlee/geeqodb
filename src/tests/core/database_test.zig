@@ -88,6 +88,7 @@ test "Database recovery after crash" {
 
     // Close the database to simulate a crash
     db.deinit();
+    db = undefined;
 
     // Recover the database
     var recovered_db = try database.recoverDatabase(allocator, test_dir);
@@ -162,4 +163,34 @@ test "Database backup and restore" {
 
     // Close the original database
     db.deinit();
+}
+
+test "CREATE TABLE creates schema and prevents duplicates" {
+    const allocator = testing.allocator;
+    const db = try database.init(allocator, "test_create_table");
+    defer db.deinit();
+
+    // Clean up any previous test data
+    std.fs.cwd().deleteTree("test_create_table") catch |err| {
+        if (err != error.FileNotFound and err != error.PathNotFound) {
+            return err;
+        }
+    };
+    defer std.fs.cwd().deleteTree("test_create_table") catch {};
+
+    // Create a table
+    _ = try db.execute("CREATE TABLE users (id INT, name TEXT, email TEXT)");
+
+    // Try to create the same table again and expect an error
+    const dup_result = db.execute("CREATE TABLE users (id INT, name TEXT, email TEXT)");
+    try testing.expectError(error.TableAlreadyExists, dup_result);
+
+    // Select from the table and check columns
+    var result_set = try db.execute("SELECT * FROM users");
+    defer result_set.deinit();
+    try testing.expectEqual(@as(usize, 3), result_set.columns.len);
+    try testing.expectEqualStrings("id", result_set.columns[0].name);
+    try testing.expectEqualStrings("name", result_set.columns[1].name);
+    try testing.expectEqualStrings("email", result_set.columns[2].name);
+    try testing.expectEqual(@as(usize, 0), result_set.row_count);
 }

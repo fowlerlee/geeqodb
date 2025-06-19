@@ -114,35 +114,32 @@ pub const RocksDB = struct {
 
     /// Close the database
     pub fn close(self: *RocksDB) void {
-        if (self.is_open) {
-            if (self.db) |db| {
-                c.rocksdb_close(db);
-                self.db = null;
-            }
-
-            if (self.options) |options| {
-                c.rocksdb_options_destroy(options);
-                self.options = null;
-            }
-
-            if (self.write_options) |write_options| {
-                c.rocksdb_writeoptions_destroy(write_options);
-                self.write_options = null;
-            }
-
-            if (self.read_options) |read_options| {
-                c.rocksdb_readoptions_destroy(read_options);
-                self.read_options = null;
-            }
-
-            self.is_open = false;
+        std.debug.print("RocksDB.close called\n", .{});
+        if (self.db) |db| {
+            c.rocksdb_close(db);
+            self.db = null;
         }
+        if (self.options) |options| {
+            c.rocksdb_options_destroy(options);
+            self.options = null;
+        }
+        if (self.write_options) |write_options| {
+            c.rocksdb_writeoptions_destroy(write_options);
+            self.write_options = null;
+        }
+        if (self.read_options) |read_options| {
+            c.rocksdb_readoptions_destroy(read_options);
+            self.read_options = null;
+        }
+        self.is_open = false;
     }
 
     /// Deinitialize the database
     pub fn deinit(self: *RocksDB) void {
-        self.close();
+        std.debug.print("RocksDB.deinit called\n", .{});
+        if (self.db != null or self.options != null or self.write_options != null or self.read_options != null or self.is_open) self.close();
         self.allocator.free(self.data_dir);
+        self.data_dir = &[_]u8{};
         self.allocator.destroy(self);
     }
 

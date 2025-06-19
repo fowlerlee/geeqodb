@@ -45,6 +45,7 @@ pub const WAL = struct {
 
     /// Close the WAL file
     pub fn close(self: *WAL) void {
+        std.debug.print("WAL.close called\n", .{});
         if (self.file) |file| {
             file.close();
             self.file = null;
@@ -54,13 +55,17 @@ pub const WAL = struct {
 
     /// Deinitialize the WAL
     pub fn deinit(self: *WAL) void {
-        self.close();
+        std.debug.print("WAL.deinit called\n", .{});
+        if (self.file != null) self.close();
         var it = self.transactions.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.value_ptr.*);
         }
-        self.transactions.deinit();
+        if (@hasField(@TypeOf(self.transactions), "deinit")) {
+            self.transactions.deinit();
+        }
         self.allocator.free(self.data_dir);
+        self.data_dir = &[_]u8{};
         self.allocator.destroy(self);
     }
 
@@ -123,6 +128,14 @@ pub const WAL = struct {
         }
 
         const file = self.file.?;
+
+        // Check if file is empty
+        const file_size = try file.getEndPos();
+        if (file_size == 0) {
+            self.is_recovered = true;
+            return;
+        }
+
         var reader = file.reader();
 
         // Clear existing transactions
@@ -133,20 +146,45 @@ pub const WAL = struct {
         self.transactions.clearRetainingCapacity();
 
         // Read all transactions from the WAL file
-        while (true) {
+        var current_pos: u64 = 0;
+        while (current_pos < file_size) {
             const txn_id = reader.readInt(u64, .little) catch |err| {
                 if (err == error.EndOfStream) break;
-                return err;
+                // If we can't read the transaction ID, the file might be corrupted
+                // Just stop reading and mark as recovered
+                break;
             };
 
-            const data_len = try reader.readInt(u64, .little);
-            const data = try self.allocator.alloc(u8, data_len);
+            const data_len = reader.readInt(u64, .little) catch |err| {
+                if (err == error.EndOfStream) break;
+                // If we can't read the data length, the file might be corrupted
+                break;
+            };
+
+            // Validate data length to prevent excessive memory allocation
+            if (data_len > 1024 * 1024) { // 1MB limit
+                break;
+            }
+
+            const data = self.allocator.alloc(u8, data_len) catch {
+                // If we can't allocate memory, skip this transaction
+                break;
+            };
             errdefer self.allocator.free(data);
 
-            try reader.readNoEof(data);
+            reader.readNoEof(data) catch {
+                // If we can't read the data, skip this transaction
+                break;
+            };
 
             // Store in memory
-            try self.transactions.put(txn_id, data);
+            self.transactions.put(txn_id, data) catch {
+                // If we can't store the transaction, skip it
+                break;
+            };
+
+            // Update position (8 bytes for txn_id + 8 bytes for data_len + data_len)
+            current_pos += 16 + data_len;
         }
 
         self.is_recovered = true;

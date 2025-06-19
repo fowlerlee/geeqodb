@@ -12,6 +12,16 @@ const Transaction = transaction_manager.Transaction;
 const ResultSet = @import("../query/result.zig").ResultSet;
 const assert = @import("../build_options.zig").assert;
 
+pub const TableSchema = struct {
+    name: []const u8,
+    columns: []ColumnSchema,
+};
+
+pub const ColumnSchema = struct {
+    name: []const u8,
+    data_type: []const u8, // For now, store as string (e.g., "INT", "TEXT")
+};
+
 /// OLAP Database main structure
 pub const OLAPDatabase = struct {
     allocator: std.mem.Allocator,
@@ -20,15 +30,50 @@ pub const OLAPDatabase = struct {
     query_planner: *QueryPlanner,
     txn_manager: *TransactionManager,
     db_context: *DatabaseContext,
+    table_schemas: std.StringHashMap(*TableSchema),
 
     pub const Error = error{
         TableNotFound,
+        TableAlreadyExists,
     };
 
     /// Execute a SQL query and return a result set
     pub fn execute(self: *OLAPDatabase, query: []const u8) !ResultSet {
         // Validate inputs
         assert(query.len > 0); // Query should not be empty
+
+        // Check for CREATE TABLE
+        if (std.mem.startsWith(u8, std.mem.trim(u8, query, &std.ascii.whitespace), "CREATE TABLE")) {
+            // Very basic parsing: CREATE TABLE table_name (col1 TYPE, col2 TYPE, ...)
+            const open_paren = std.mem.indexOf(u8, query, "(") orelse return error.InvalidSyntax;
+            const close_paren = std.mem.lastIndexOf(u8, query, ")") orelse return error.InvalidSyntax;
+            const before_paren = std.mem.trim(u8, query[0..open_paren], &std.ascii.whitespace);
+            const after_create = before_paren[12..]; // after "CREATE TABLE"
+            const table_name = std.mem.trim(u8, after_create, &std.ascii.whitespace);
+            const columns_str = query[open_paren + 1 .. close_paren];
+            var col_tokens = std.mem.tokenizeSequence(u8, columns_str, ",");
+            var columns = std.ArrayList(ColumnSchema).init(self.allocator);
+            defer {
+                // Free all allocated column names and types
+                for (columns.items) |col| {
+                    self.allocator.free(col.name);
+                    self.allocator.free(col.data_type);
+                }
+                columns.deinit();
+            }
+            while (col_tokens.next()) |col| {
+                var parts = std.mem.tokenizeSequence(u8, col, " ");
+                const col_name = std.mem.trim(u8, parts.next() orelse return error.InvalidSyntax, &std.ascii.whitespace);
+                const col_type = std.mem.trim(u8, parts.next() orelse return error.InvalidSyntax, &std.ascii.whitespace);
+                try columns.append(ColumnSchema{
+                    .name = try self.allocator.dupe(u8, col_name),
+                    .data_type = try self.allocator.dupe(u8, col_type),
+                });
+            }
+            try self.createTable(table_name, columns.items);
+            // Return an empty result set
+            return try ResultSet.init(self.allocator, 0, 0);
+        }
 
         // Try to execute the query using the database context
         const result = self.db_context.executeRaw(query);
@@ -44,11 +89,36 @@ pub const OLAPDatabase = struct {
 
     /// Deinitialize the database
     pub fn deinit(self: *OLAPDatabase) void {
-        self.storage.deinit();
-        self.wal.deinit();
-        self.query_planner.deinit();
-        self.txn_manager.deinit();
-        self.db_context.deinit();
+        std.debug.print("OLAPDatabase.deinit called\n", .{});
+        // Free all table schemas
+        std.debug.print("Deinit table_schemas\n", .{});
+        if (@hasField(@TypeOf(self.table_schemas), "deinit") and self.table_schemas.count() > 0) {
+            var it = self.table_schemas.iterator();
+            while (it.next()) |entry| {
+                // Free the hash map key (table name)
+                self.allocator.free(entry.key_ptr.*);
+                // Free the schema and its fields
+                const schema = entry.value_ptr.*;
+                self.allocator.free(schema.name);
+                for (schema.columns) |col| {
+                    self.allocator.free(col.name);
+                    self.allocator.free(col.data_type);
+                }
+                self.allocator.free(schema.columns);
+                self.allocator.destroy(schema);
+            }
+            self.table_schemas.deinit();
+        }
+        std.debug.print("Deinit RocksDB\n", .{});
+        if (@intFromPtr(self.storage) != 0) self.storage.deinit();
+        std.debug.print("Deinit WAL\n", .{});
+        if (@intFromPtr(self.wal) != 0) self.wal.deinit();
+        std.debug.print("Deinit QueryPlanner\n", .{});
+        if (@intFromPtr(self.query_planner) != 0) self.query_planner.deinit();
+        std.debug.print("Deinit TxnManager\n", .{});
+        if (@intFromPtr(self.txn_manager) != 0) self.txn_manager.deinit();
+        std.debug.print("Deinit DBContext\n", .{});
+        if (@intFromPtr(self.db_context) != 0) self.db_context.deinit();
         self.allocator.destroy(self);
     }
 
@@ -269,11 +339,28 @@ pub const OLAPDatabase = struct {
         // In a real implementation, this would apply incremental backups
         // For now, we just ignore the additional backups
     }
+
+    /// Create a table in the database
+    pub fn createTable(self: *OLAPDatabase, table_name: []const u8, columns: []ColumnSchema) !void {
+        if (self.table_schemas.get(table_name) != null) {
+            return error.TableAlreadyExists;
+        }
+        const schema = try self.allocator.create(TableSchema);
+        schema.* = TableSchema{
+            .name = try self.allocator.dupe(u8, table_name),
+            .columns = try self.allocator.dupe(ColumnSchema, columns),
+        };
+        // Store the table name as a key in the hash map (dupe it for the map)
+        const key = try self.allocator.dupe(u8, table_name);
+        try self.table_schemas.put(key, schema);
+    }
 };
 
 /// Initialize a new OLAP database
 pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
     var db = try allocator.create(OLAPDatabase);
+    errdefer allocator.destroy(db);
+
     db.allocator = allocator;
 
     // If data_dir is empty, use a default directory
@@ -283,10 +370,24 @@ pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
     try std.fs.cwd().makePath(actual_data_dir);
 
     db.storage = try RocksDB.init(allocator, actual_data_dir);
+    errdefer db.storage.deinit();
+
     db.wal = try WAL.init(allocator, actual_data_dir);
+    errdefer db.wal.deinit();
+
     db.query_planner = try QueryPlanner.init(allocator);
+    errdefer db.query_planner.deinit();
+
     db.txn_manager = try TransactionManager.init(allocator);
+    errdefer db.txn_manager.deinit();
+
     db.db_context = try DatabaseContext.init(allocator);
+    errdefer db.db_context.deinit();
+
+    db.table_schemas = std.StringHashMap(*TableSchema).init(allocator);
+    errdefer db.table_schemas.deinit();
+
+    db.db_context.setTableSchemas(&db.table_schemas);
 
     return db;
 }

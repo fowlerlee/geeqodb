@@ -5,11 +5,13 @@ const assert = @import("../build_options.zig").assert;
 const Index = @import("../storage/index.zig").Index;
 const BTreeMapIndex = @import("../storage/btree_index.zig").BTreeMapIndex;
 const SkipListIndex = @import("../storage/skiplist_index.zig").SkipListIndex;
+const TableSchema = @import("../core/database.zig").TableSchema;
 
 /// Database context for query execution
 pub const DatabaseContext = struct {
     allocator: std.mem.Allocator,
     indexes: std.StringHashMap(*anyopaque),
+    table_schemas: ?*std.StringHashMap(*TableSchema) = null,
 
     pub fn init(allocator: std.mem.Allocator) !*DatabaseContext {
         const context = try allocator.create(DatabaseContext);
@@ -47,6 +49,10 @@ pub const DatabaseContext = struct {
         return @ptrCast(@alignCast(index_ptr));
     }
 
+    pub fn setTableSchemas(self: *DatabaseContext, schemas: *std.StringHashMap(*TableSchema)) void {
+        self.table_schemas = schemas;
+    }
+
     pub fn executeRaw(self: *DatabaseContext, query: []const u8) !result.ResultSet {
         // Create a QueryPlanner instance
         var query_planner = try planner.QueryPlanner.init(self.allocator);
@@ -78,7 +84,7 @@ pub const QueryExecutor = struct {
             .IndexSeek => return try executeIndexSeek(allocator, plan, context),
             .IndexRangeScan => return try executeIndexRangeScan(allocator, plan, context),
             .IndexScan => return try executeIndexScan(allocator, plan, context),
-            .TableScan => return try executeTableScan(allocator, plan),
+            .TableScan => return try executeTableScan(allocator, plan, context),
             else => {
                 // For other node types, we would implement specific execution strategies
                 // For now, we'll just return an empty result set
@@ -122,7 +128,9 @@ pub const QueryExecutor = struct {
                 const index = context.getBTreeIndex(index_info.name) orelse return error.IndexNotFound;
 
                 // Look up the row ID using the index
-                const row_id = index.get(key) orelse return try result.ResultSet.init(allocator, 0, 0);
+                const row_id = index.get(key) orelse {
+                    return try result.ResultSet.init(allocator, 0, 0);
+                };
 
                 // In a real implementation, we would fetch the row data using the row ID
                 // For now, we'll just create a simple result set with the row ID
@@ -146,7 +154,9 @@ pub const QueryExecutor = struct {
                 const index = context.getSkipListIndex(index_info.name) orelse return error.IndexNotFound;
 
                 // Look up the row ID using the index
-                const row_id = index.get(key) orelse return try result.ResultSet.init(allocator, 0, 0);
+                const row_id = index.get(key) orelse {
+                    return try result.ResultSet.init(allocator, 0, 0);
+                };
 
                 // In a real implementation, we would fetch the row data using the row ID
                 // For now, we'll just create a simple result set with the row ID
@@ -179,7 +189,7 @@ pub const QueryExecutor = struct {
         // In a real implementation, we would scan the index within the specified range
         // For now, we'll just return an empty result set
         _ = context; // Would be used in a real implementation
-        return try result.ResultSet.init(allocator, 0, 0);
+        return result.ResultSet.init(allocator, 0, 0);
     }
 
     /// Execute an index scan operation
@@ -192,122 +202,45 @@ pub const QueryExecutor = struct {
         // In a real implementation, we would scan the entire index
         // For now, we'll just return an empty result set
         _ = context; // Would be used in a real implementation
-        return try result.ResultSet.init(allocator, 0, 0);
+        return result.ResultSet.init(allocator, 0, 0);
     }
 
     /// Execute a table scan operation
-    fn executeTableScan(allocator: std.mem.Allocator, plan: *planner.PhysicalPlan) !result.ResultSet {
-        // Extract table name from the plan
+    /// NOTE: Caller must always deinit the returned ResultSet.
+    fn executeTableScan(allocator: std.mem.Allocator, plan: *planner.PhysicalPlan, context: *DatabaseContext) !result.ResultSet {
         if (plan.table_name == null) {
             return error.MissingTableName;
         }
-
         const table_name = plan.table_name.?;
-
-        // For demonstration purposes, return mock data based on table name
-        if (std.mem.eql(u8, table_name, "users")) {
-            // Create a result set with user data
-            var result_set = try result.ResultSet.init(allocator, 3, 0);
-
-            // Set column names
-            result_set.columns[0].name = try allocator.dupe(u8, "id");
-            result_set.columns[1].name = try allocator.dupe(u8, "name");
-            result_set.columns[2].name = try allocator.dupe(u8, "email");
-
-            // Add sample rows
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 1 },
-                result.Value{ .text = try allocator.dupe(u8, "Alice") },
-                result.Value{ .text = try allocator.dupe(u8, "alice@example.com") },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 2 },
-                result.Value{ .text = try allocator.dupe(u8, "Bob") },
-                result.Value{ .text = try allocator.dupe(u8, "bob@example.com") },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 3 },
-                result.Value{ .text = try allocator.dupe(u8, "Charlie") },
-                result.Value{ .text = try allocator.dupe(u8, "charlie@example.com") },
-            });
-
-            return result_set;
-        } else if (std.mem.eql(u8, table_name, "products")) {
-            // Create a result set with product data
-            var result_set = try result.ResultSet.init(allocator, 3, 0);
-
-            // Set column names
-            result_set.columns[0].name = try allocator.dupe(u8, "id");
-            result_set.columns[1].name = try allocator.dupe(u8, "name");
-            result_set.columns[2].name = try allocator.dupe(u8, "price");
-
-            // Add sample rows
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 101 },
-                result.Value{ .text = try allocator.dupe(u8, "Laptop") },
-                result.Value{ .float = 999.99 },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 102 },
-                result.Value{ .text = try allocator.dupe(u8, "Phone") },
-                result.Value{ .float = 599.99 },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 103 },
-                result.Value{ .text = try allocator.dupe(u8, "Tablet") },
-                result.Value{ .float = 399.99 },
-            });
-
-            return result_set;
-        } else if (std.mem.eql(u8, table_name, "orders")) {
-            // Create a result set with order data
-            var result_set = try result.ResultSet.init(allocator, 4, 0);
-
-            // Set column names
-            result_set.columns[0].name = try allocator.dupe(u8, "id");
-            result_set.columns[1].name = try allocator.dupe(u8, "user_id");
-            result_set.columns[2].name = try allocator.dupe(u8, "product_id");
-            result_set.columns[3].name = try allocator.dupe(u8, "quantity");
-
-            // Add sample rows
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 1001 },
-                result.Value{ .integer = 1 },
-                result.Value{ .integer = 101 },
-                result.Value{ .integer = 1 },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 1002 },
-                result.Value{ .integer = 2 },
-                result.Value{ .integer = 102 },
-                result.Value{ .integer = 2 },
-            });
-
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .integer = 1003 },
-                result.Value{ .integer = 3 },
-                result.Value{ .integer = 103 },
-                result.Value{ .integer = 1 },
-            });
-
-            return result_set;
-        } else {
-            // Return an empty result for unknown tables
-            var result_set = try result.ResultSet.init(allocator, 1, 0);
-            result_set.columns[0].name = try allocator.dupe(u8, "info");
-
-            const error_message = try std.fmt.allocPrint(allocator, "Table not found: {s}", .{table_name});
-            try result_set.addRow(&[_]result.Value{
-                result.Value{ .text = error_message },
-            });
-
-            return result_set;
+        if (context.table_schemas) |schemas| {
+            if (schemas.get(table_name)) |schema| {
+                // Return empty result set with correct columns
+                var result_set = try result.ResultSet.init(allocator, schema.columns.len, 0);
+                for (schema.columns, 0..) |col, i| {
+                    result_set.columns[i].name = try allocator.dupe(u8, col.name);
+                    // Map string type to DataType
+                    if (std.ascii.eqlIgnoreCase(col.data_type, "INT") or std.ascii.eqlIgnoreCase(col.data_type, "INTEGER")) {
+                        result_set.columns[i].data_type = .Int64;
+                    } else if (std.ascii.eqlIgnoreCase(col.data_type, "TEXT")) {
+                        result_set.columns[i].data_type = .String;
+                    } else if (std.ascii.eqlIgnoreCase(col.data_type, "FLOAT") or std.ascii.eqlIgnoreCase(col.data_type, "REAL")) {
+                        result_set.columns[i].data_type = .Float64;
+                    } else {
+                        result_set.columns[i].data_type = .String;
+                    }
+                }
+                return result_set;
+            }
         }
+        // Fallback: old mock data or error
+        var result_set = try result.ResultSet.init(allocator, 1, 1);
+        result_set.columns[0].name = try allocator.dupe(u8, "info");
+        const error_message = std.fmt.allocPrint(allocator, "Table not found: {s}", .{table_name}) catch |err| {
+            result_set.deinit();
+            return err;
+        };
+        result_set.rows[0].values[0] = result.Value{ .text = error_message };
+        return result_set;
     }
 };
 
