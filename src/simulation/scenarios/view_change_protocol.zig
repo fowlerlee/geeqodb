@@ -1,6 +1,6 @@
 const std = @import("std");
-const Simulation = @import("simulation").Simulation;
-const replica_management = @import("replica_management");
+const Simulation = @import("../simulation.zig").Simulation;
+const replica_management = @import("../scenarios/replica_management.zig");
 const ReplicaRegistry = replica_management.ReplicaRegistry;
 const ReplicaState = replica_management.ReplicaState;
 

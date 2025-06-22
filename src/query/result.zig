@@ -12,11 +12,27 @@ pub const Value = union(enum) {
     pub fn deinit(self: *Value, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .text => |text| {
+                std.debug.print("    Value.deinit: freeing text '{s}' (len: {})\n", .{ text, text.len });
                 if (text.len > 0) {
+                    std.debug.print("    Value.deinit: calling allocator.free for text\n", .{});
                     allocator.free(text);
+                    std.debug.print("    Value.deinit: text freed successfully\n", .{});
+                } else {
+                    std.debug.print("    Value.deinit: text is empty, skipping free\n", .{});
                 }
             },
-            else => {}, // No cleanup needed for other types
+            .integer => |int| {
+                std.debug.print("    Value.deinit: integer value {} (no cleanup needed)\n", .{int});
+            },
+            .float => |float| {
+                std.debug.print("    Value.deinit: float value {} (no cleanup needed)\n", .{float});
+            },
+            .boolean => |bool_val| {
+                std.debug.print("    Value.deinit: boolean value {} (no cleanup needed)\n", .{bool_val});
+            },
+            .null => {
+                std.debug.print("    Value.deinit: null value (no cleanup needed)\n", .{});
+            },
         }
     }
 };

@@ -1,12 +1,12 @@
 const std = @import("std");
 const testing = std.testing;
-const Simulation = @import("simulation").Simulation;
+const Simulation = @import("../../simulation/simulation.zig").Simulation;
 
 // Import the necessary modules
-const distributed_wal = @import("distributed_wal");
+const distributed_wal = @import("../../storage/distributed_wal.zig");
 const DistributedWAL = distributed_wal.DistributedWAL;
 const PrepareOK = distributed_wal.PrepareOK;
-const replica_management = @import("replica_management");
+const replica_management = @import("../../simulation/scenarios/replica_management.zig");
 const ReplicaState = replica_management.ReplicaState;
 const ReplicaRegistry = replica_management.ReplicaRegistry;
 

@@ -1,8 +1,8 @@
 const std = @import("std");
 const assert = @import("../build_options.zig").assert;
 const WAL = @import("wal.zig").WAL;
-const Simulation = @import("simulation").Simulation;
-const replica_management = @import("replica_management");
+const Simulation = @import("../simulation/simulation.zig").Simulation;
+const replica_management = @import("../simulation/scenarios/replica_management.zig");
 const ReplicaRegistry = replica_management.ReplicaRegistry;
 const ReplicaState = replica_management.ReplicaState;
 

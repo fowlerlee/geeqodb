@@ -33,11 +33,39 @@ pub const WAL = struct {
         // Create the directory if it doesn't exist
         try std.fs.cwd().makePath(self.data_dir);
 
-        // Open the WAL file with read/write access, create if doesn't exist
-        self.file = try std.fs.cwd().createFile(wal_path, .{
-            .read = true,
-            .truncate = false,
-        });
+        // Check if WAL file exists and has content
+        var file_exists = false;
+        var file_size: usize = 0;
+        if (std.fs.cwd().openFile(wal_path, .{ .mode = .read_only })) |existing_file| {
+            defer existing_file.close();
+            file_exists = true;
+            file_size = existing_file.getEndPos() catch 0;
+            std.debug.print("[WAL] open: WAL file exists, size: {}\n", .{file_size});
+        } else |err| {
+            if (err == error.FileNotFound) {
+                std.debug.print("[WAL] open: WAL file does not exist: {s}\n", .{wal_path});
+            } else {
+                std.debug.print("[WAL] open: Error opening WAL file: {}\n", .{err});
+            }
+        }
+
+        // Try to open the WAL file for read/write
+        std.debug.print("[WAL] openFile: {s}\n", .{wal_path});
+        self.file = std.fs.cwd().openFile(wal_path, .{ .mode = .read_write }) catch |err| {
+            if (err == error.FileNotFound) {
+                std.debug.print("[WAL] createFile: {s}\n", .{wal_path});
+                // Create the file if it doesn't exist
+                const created = try std.fs.cwd().createFile(wal_path, .{
+                    .truncate = false,
+                });
+                created.close();
+                // Now open for read/write
+                self.file = try std.fs.cwd().openFile(wal_path, .{ .mode = .read_write });
+                return;
+            } else {
+                return err;
+            }
+        };
 
         // Recover any existing transactions
         try self.recover();
@@ -83,6 +111,7 @@ pub const WAL = struct {
     /// Log a transaction
     pub fn logTransaction(self: *WAL, txn_id: u64, data: []const u8) !void {
         if (self.file == null) {
+            std.debug.print("[WAL] logTransaction: WAL file is null!\n", .{});
             return error.WALClosed;
         }
 
@@ -92,7 +121,11 @@ pub const WAL = struct {
 
         // Write to WAL file
         const file = self.file.?;
+        // Seek to end before writing
+        try file.seekFromEnd(0);
         var writer = file.writer();
+
+        std.debug.print("[WAL] logTransaction: Writing txn_id {} with data '{s}' (len: {}) to WAL file\n", .{ txn_id, data, data.len });
 
         // Write transaction header (id and length)
         try writer.writeInt(u64, txn_id, .little);
@@ -106,6 +139,8 @@ pub const WAL = struct {
 
         // Flush to ensure data is written to disk
         try file.sync();
+        const file_size = try file.getEndPos();
+        std.debug.print("[WAL] logTransaction: WAL file flushed, file size now {}\n", .{file_size});
     }
 
     /// Read a transaction by ID
@@ -119,19 +154,29 @@ pub const WAL = struct {
 
     /// Recover from the WAL
     pub fn recover(self: *WAL) !void {
+        std.debug.print("[WAL] recover() called\\n", .{});
+
         if (self.file == null) {
+            std.debug.print("[WAL] recover() failed: WAL file is null\\n", .{});
             return error.WALClosed;
         }
 
         if (self.is_recovered) {
+            std.debug.print("[WAL] recover() skipped: already recovered\\n", .{});
             return;
         }
 
         const file = self.file.?;
 
+        // Seek to the beginning before reading
+        try file.seekTo(0);
+
         // Check if file is empty
         const file_size = try file.getEndPos();
+        std.debug.print("[WAL] recover() file size: {}\\n", .{file_size});
+
         if (file_size == 0) {
+            std.debug.print("[WAL] recover() file is empty, marking as recovered\\n", .{});
             self.is_recovered = true;
             return;
         }
@@ -139,6 +184,7 @@ pub const WAL = struct {
         var reader = file.reader();
 
         // Clear existing transactions
+        std.debug.print("[WAL] recover() clearing existing transactions\\n", .{});
         var it = self.transactions.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.value_ptr.*);
@@ -147,46 +193,69 @@ pub const WAL = struct {
 
         // Read all transactions from the WAL file
         var current_pos: u64 = 0;
+        var recovered_count: u64 = 0;
+
+        std.debug.print("[WAL] recover() reading transactions from file\\n", .{});
+
         while (current_pos < file_size) {
             const txn_id = reader.readInt(u64, .little) catch |err| {
-                if (err == error.EndOfStream) break;
+                if (err == error.EndOfStream) {
+                    std.debug.print("[WAL] recover() reached end of stream at position {}\\n", .{current_pos});
+                    break;
+                }
                 // If we can't read the transaction ID, the file might be corrupted
                 // Just stop reading and mark as recovered
+                std.debug.print("[WAL] recover() error reading txn_id: {}\\n", .{err});
                 break;
             };
 
             const data_len = reader.readInt(u64, .little) catch |err| {
-                if (err == error.EndOfStream) break;
+                if (err == error.EndOfStream) {
+                    std.debug.print("[WAL] recover() reached end of stream after reading txn_id\\n", .{});
+                    break;
+                }
                 // If we can't read the data length, the file might be corrupted
+                std.debug.print("[WAL] recover() error reading data_len: {}\\n", .{err});
                 break;
             };
 
+            std.debug.print("[WAL] recover() reading transaction {} with data length {}\\n", .{ txn_id, data_len });
+
             // Validate data length to prevent excessive memory allocation
             if (data_len > 1024 * 1024) { // 1MB limit
+                std.debug.print("[WAL] recover() data length {} exceeds 1MB limit, skipping\\n", .{data_len});
                 break;
             }
 
             const data = self.allocator.alloc(u8, data_len) catch {
                 // If we can't allocate memory, skip this transaction
+                std.debug.print("[WAL] recover() failed to allocate memory for data length {}\\n", .{data_len});
                 break;
             };
             errdefer self.allocator.free(data);
 
             reader.readNoEof(data) catch {
                 // If we can't read the data, skip this transaction
+                std.debug.print("[WAL] recover() failed to read data for transaction {}\\n", .{txn_id});
                 break;
             };
+
+            std.debug.print("[WAL] recover() recovered transaction {}: {s}\\n", .{ txn_id, data });
 
             // Store in memory
             self.transactions.put(txn_id, data) catch {
                 // If we can't store the transaction, skip it
+                std.debug.print("[WAL] recover() failed to store transaction {} in memory\\n", .{txn_id});
                 break;
             };
+
+            recovered_count += 1;
 
             // Update position (8 bytes for txn_id + 8 bytes for data_len + data_len)
             current_pos += 16 + data_len;
         }
 
+        std.debug.print("[WAL] recover() completed, recovered {} transactions\\n", .{recovered_count});
         self.is_recovered = true;
     }
 };

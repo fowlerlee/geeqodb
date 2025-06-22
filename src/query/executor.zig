@@ -214,8 +214,8 @@ pub const QueryExecutor = struct {
         const table_name = plan.table_name.?;
         if (context.table_schemas) |schemas| {
             if (schemas.get(table_name)) |schema| {
-                // Return empty result set with correct columns
-                var result_set = try result.ResultSet.init(allocator, schema.columns.len, 0);
+                // Return result set with correct columns and rows from in-memory storage
+                var result_set = try result.ResultSet.init(allocator, schema.columns.len, schema.rows.items.len);
                 for (schema.columns, 0..) |col, i| {
                     result_set.columns[i].name = try allocator.dupe(u8, col.name);
                     // Map string type to DataType
@@ -227,6 +227,12 @@ pub const QueryExecutor = struct {
                         result_set.columns[i].data_type = .Float64;
                     } else {
                         result_set.columns[i].data_type = .String;
+                    }
+                }
+                // Copy rows
+                for (schema.rows.items, 0..) |row, r| {
+                    for (row, 0..) |val, c| {
+                        result_set.rows[r].values[c] = val;
                     }
                 }
                 return result_set;

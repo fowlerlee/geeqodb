@@ -1,8 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-
-// Import the module
-const replica_management = @import("replica_management");
+const Simulation = @import("../../simulation/simulation.zig").Simulation;
+const replica_management = @import("../../simulation/scenarios/replica_management.zig");
 const ReplicaState = replica_management.ReplicaState;
 const ReplicaRegistry = replica_management.ReplicaRegistry;
 

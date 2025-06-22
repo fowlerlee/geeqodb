@@ -297,7 +297,8 @@ test "Parse invalid SQL query" {
         ast.deinit();
     } else |err| {
         // We would expect an error like error.InvalidSyntax
-        _ = err;
+        // For now, just ignore the error since our parser doesn't handle this case yet
+        std.debug.print("Expected parsing error: {}\n", .{err});
     }
 }
 

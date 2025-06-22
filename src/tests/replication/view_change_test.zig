@@ -1,12 +1,12 @@
 const std = @import("std");
 const testing = std.testing;
-const Simulation = @import("simulation").Simulation;
+const Simulation = @import("../../simulation/simulation.zig").Simulation;
 
 // Import replica management and view change functionality
-const replica_management = @import("replica_management");
+const replica_management = @import("../../simulation/scenarios/replica_management.zig");
 const ReplicaState = replica_management.ReplicaState;
 const ReplicaRegistry = replica_management.ReplicaRegistry;
-const view_change_protocol = @import("view_change");
+const view_change_protocol = @import("../../simulation/scenarios/view_change_protocol.zig");
 const ViewChangeProtocol = view_change_protocol.ViewChangeProtocol;
 
 test "ViewChangeProtocol initialization" {

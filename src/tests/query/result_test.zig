@@ -26,26 +26,20 @@ test "ResultSet with integer column" {
     var result_set = try ResultSet.init(allocator, 1, 1);
     defer result_set.deinit();
 
-    // Create a column with integer data
-    const column_name = try allocator.dupe(u8, "id");
-    const data = try allocator.alloc(u8, @sizeOf(i32));
-    const value: i32 = 42;
-    @memcpy(data[0..@sizeOf(i32)], std.mem.asBytes(&value));
-
     // Set up the column
-    result_set.columns[0] = ResultColumn{
-        .name = column_name,
-        .data_type = .Int32,
-        .data = data,
-        .null_bitmap = null,
-        .row_count = 1,
-    };
+    result_set.columns[0].name = try allocator.dupe(u8, "id");
+    result_set.columns[0].data_type = .Int32;
+
+    // Add a row with integer value
+    try result_set.addRow(&[_]result.Value{
+        result.Value{ .integer = 42 },
+    });
 
     // Get the value
-    const retrieved_value = try result_set.getValue(0, 0, i32);
+    const retrieved_value = result_set.getValue(0, 0);
 
     // Verify the value
-    try testing.expectEqual(@as(i32, 42), retrieved_value);
+    try testing.expectEqual(result.Value{ .integer = 42 }, retrieved_value);
 }
 
 test "ResultSet with float column" {
@@ -55,26 +49,20 @@ test "ResultSet with float column" {
     var result_set = try ResultSet.init(allocator, 1, 1);
     defer result_set.deinit();
 
-    // Create a column with float data
-    const column_name = try allocator.dupe(u8, "value");
-    const data = try allocator.alloc(u8, @sizeOf(f64));
-    const value: f64 = 3.14159;
-    @memcpy(data[0..@sizeOf(f64)], std.mem.asBytes(&value));
-
     // Set up the column
-    result_set.columns[0] = ResultColumn{
-        .name = column_name,
-        .data_type = .Float64,
-        .data = data,
-        .null_bitmap = null,
-        .row_count = 1,
-    };
+    result_set.columns[0].name = try allocator.dupe(u8, "value");
+    result_set.columns[0].data_type = .Float64;
+
+    // Add a row with float value
+    try result_set.addRow(&[_]result.Value{
+        result.Value{ .float = 3.14159 },
+    });
 
     // Get the value
-    const retrieved_value = try result_set.getValue(0, 0, f64);
+    const retrieved_value = result_set.getValue(0, 0);
 
     // Verify the value
-    try testing.expectEqual(@as(f64, 3.14159), retrieved_value);
+    try testing.expectEqual(result.Value{ .float = 3.14159 }, retrieved_value);
 }
 
 test "ResultSet with null values" {
@@ -84,35 +72,27 @@ test "ResultSet with null values" {
     var result_set = try ResultSet.init(allocator, 1, 2);
     defer result_set.deinit();
 
-    // Create a column with integer data
-    const column_name = try allocator.dupe(u8, "id");
-    const data = try allocator.alloc(u8, 2 * @sizeOf(i32));
-    const value1: i32 = 42;
-    const value2: i32 = 84;
-    @memcpy(data[0..@sizeOf(i32)], std.mem.asBytes(&value1));
-    @memcpy(data[@sizeOf(i32) .. 2 * @sizeOf(i32)], std.mem.asBytes(&value2));
-
-    // Create a null bitmap (first value is null, second is not)
-    var null_bitmap = try allocator.alloc(u8, 1);
-    null_bitmap[0] = 0b00000010; // Second bit is set (second value is not null)
-
     // Set up the column
-    result_set.columns[0] = ResultColumn{
-        .name = column_name,
-        .data_type = .Int32,
-        .data = data,
-        .null_bitmap = null_bitmap,
-        .row_count = 2,
-    };
+    result_set.columns[0].name = try allocator.dupe(u8, "id");
+    result_set.columns[0].data_type = .Int32;
 
-    // Try to get the first value (should be null)
-    try testing.expectError(error.NullValue, result_set.getValue(0, 0, i32));
+    // Add rows with values (first is null, second is not)
+    try result_set.addRow(&[_]result.Value{
+        result.Value{ .null = {} },
+    });
+    try result_set.addRow(&[_]result.Value{
+        result.Value{ .integer = 84 },
+    });
+
+    // Get the first value (should be null)
+    const null_value = result_set.getValue(0, 0);
+    try testing.expectEqual(result.Value{ .null = {} }, null_value);
 
     // Get the second value
-    const retrieved_value = try result_set.getValue(1, 0, i32);
+    const retrieved_value = result_set.getValue(1, 0);
 
     // Verify the value
-    try testing.expectEqual(@as(i32, 84), retrieved_value);
+    try testing.expectEqual(result.Value{ .integer = 84 }, retrieved_value);
 }
 
 test "ResultSet out of bounds access" {
@@ -122,24 +102,20 @@ test "ResultSet out of bounds access" {
     var result_set = try ResultSet.init(allocator, 1, 1);
     defer result_set.deinit();
 
-    // Create a column with integer data
-    const column_name = try allocator.dupe(u8, "id");
-    const data = try allocator.alloc(u8, @sizeOf(i32));
-    const value: i32 = 42;
-    @memcpy(data[0..@sizeOf(i32)], std.mem.asBytes(&value));
-
     // Set up the column
-    result_set.columns[0] = ResultColumn{
-        .name = column_name,
-        .data_type = .Int32,
-        .data = data,
-        .null_bitmap = null,
-        .row_count = 1,
-    };
+    result_set.columns[0].name = try allocator.dupe(u8, "id");
+    result_set.columns[0].data_type = .Int32;
 
-    // Try to access out of bounds row
-    try testing.expectError(error.IndexOutOfBounds, result_set.getValue(1, 0, i32));
+    // Add a row with value
+    try result_set.addRow(&[_]result.Value{
+        result.Value{ .integer = 42 },
+    });
 
-    // Try to access out of bounds column
-    try testing.expectError(error.IndexOutOfBounds, result_set.getValue(0, 1, i32));
+    // Try to access out of bounds row (should return null)
+    const out_of_bounds_value = result_set.getValue(1, 0);
+    try testing.expectEqual(result.Value{ .null = {} }, out_of_bounds_value);
+
+    // Try to access out of bounds column (should return null)
+    const out_of_bounds_col_value = result_set.getValue(0, 1);
+    try testing.expectEqual(result.Value{ .null = {} }, out_of_bounds_col_value);
 }

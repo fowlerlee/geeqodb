@@ -1,4 +1,5 @@
 const std = @import("std");
+const Value = @import("../query/result.zig").Value;
 const RocksDB = @import("../storage/rocksdb.zig").RocksDB;
 const c = @import("../storage/rocksdb_c.zig");
 const WAL = @import("../storage/wal.zig").WAL;
@@ -15,6 +16,7 @@ const assert = @import("../build_options.zig").assert;
 pub const TableSchema = struct {
     name: []const u8,
     columns: []ColumnSchema,
+    rows: std.ArrayList([]Value), // Each row is an array of Value
 };
 
 pub const ColumnSchema = struct {
@@ -31,11 +33,49 @@ pub const OLAPDatabase = struct {
     txn_manager: *TransactionManager,
     db_context: *DatabaseContext,
     table_schemas: std.StringHashMap(*TableSchema),
+    next_txn_id: u64 = 1, // Track next transaction ID
+    is_recovering: bool = false, // Prevent WAL logging during recovery
 
     pub const Error = error{
         TableNotFound,
         TableAlreadyExists,
     };
+
+    /// Get the next transaction ID
+    fn getNextTxnId(self: *OLAPDatabase) u64 {
+        const id = self.next_txn_id;
+        self.next_txn_id += 1;
+        return id;
+    }
+
+    /// Recover table schemas and data from WAL
+    fn recoverFromWAL(self: *OLAPDatabase) !void {
+        self.is_recovering = true;
+        defer self.is_recovering = false;
+        // Get all transactions from WAL
+        var it = self.wal.transactions.iterator();
+        var replay_count: usize = 0;
+        while (it.next()) |entry| {
+            const txn_data = entry.value_ptr.*;
+            std.debug.print("[WAL RECOVERY] Replaying WAL entry: {s}\n", .{txn_data});
+            replay_count += 1;
+            // Parse transaction data
+            if (std.mem.startsWith(u8, txn_data, "CREATE_TABLE:")) {
+                var parts = std.mem.splitSequence(u8, txn_data[13..], ":");
+                _ = parts.next() orelse continue; // table_name
+                const query = parts.next() orelse continue;
+                std.debug.print("[WAL RECOVERY] Executing CREATE TABLE: {s}\n", .{query});
+                _ = try self.execute(query);
+            } else if (std.mem.startsWith(u8, txn_data, "INSERT:")) {
+                var parts = std.mem.splitSequence(u8, txn_data[7..], ":");
+                _ = parts.next() orelse continue; // table_name
+                const query = parts.next() orelse continue;
+                std.debug.print("[WAL RECOVERY] Executing INSERT: {s}\n", .{query});
+                _ = try self.execute(query);
+            }
+        }
+        std.debug.print("[WAL RECOVERY] Total WAL entries replayed: {}\n", .{replay_count});
+    }
 
     /// Execute a SQL query and return a result set
     pub fn execute(self: *OLAPDatabase, query: []const u8) !ResultSet {
@@ -71,7 +111,63 @@ pub const OLAPDatabase = struct {
                 });
             }
             try self.createTable(table_name, columns.items);
+
+            // Log the CREATE TABLE operation to WAL
+            if (!self.is_recovering) {
+                const wal_data = try std.fmt.allocPrint(self.allocator, "CREATE_TABLE:{s}:{s}", .{ table_name, query });
+                defer self.allocator.free(wal_data);
+                try self.wal.logTransaction(self.getNextTxnId(), wal_data);
+            }
+
             // Return an empty result set
+            return try ResultSet.init(self.allocator, 0, 0);
+        }
+
+        // Check for INSERT INTO
+        if (std.mem.startsWith(u8, std.mem.trim(u8, query, &std.ascii.whitespace), "INSERT INTO")) {
+            // Very basic parsing: INSERT INTO table_name VALUES (...)
+            const values_kw = std.mem.indexOf(u8, query, "VALUES") orelse return error.InvalidSyntax;
+            const before_values = std.mem.trim(u8, query[0..values_kw], &std.ascii.whitespace);
+            const after_insert = before_values[11..]; // after "INSERT INTO"
+            const table_name_end = std.mem.indexOf(u8, after_insert, " ") orelse after_insert.len;
+            const table_name = std.mem.trim(u8, after_insert[0..table_name_end], &std.ascii.whitespace);
+            const open_paren = std.mem.indexOf(u8, query, "(") orelse return error.InvalidSyntax;
+            const close_paren = std.mem.lastIndexOf(u8, query, ")") orelse return error.InvalidSyntax;
+            const values_str = std.mem.trim(u8, query[open_paren + 1 .. close_paren], &std.ascii.whitespace);
+
+            // Split values by comma (does not handle quoted commas)
+            var values_iter = std.mem.splitScalar(u8, values_str, ',');
+            var values = std.ArrayList(Value).init(self.allocator);
+            defer values.deinit();
+            while (values_iter.next()) |val_str| {
+                const trimmed = std.mem.trim(u8, val_str, &std.ascii.whitespace);
+                // Parse as integer or string (very basic)
+                if (trimmed.len > 0 and trimmed[0] == '\'') {
+                    // String literal: remove quotes
+                    if (trimmed.len < 2 or trimmed[trimmed.len - 1] != '\'') return error.InvalidSyntax;
+                    const str_val = trimmed[1 .. trimmed.len - 1];
+                    try values.append(Value{ .text = try self.allocator.dupe(u8, str_val) });
+                } else {
+                    const int_val = std.fmt.parseInt(i64, trimmed, 10) catch return error.InvalidSyntax;
+                    try values.append(Value{ .integer = int_val });
+                }
+            }
+
+            // Find the table
+            const schema_ptr = self.table_schemas.get(table_name) orelse return error.TableNotFound;
+            if (values.items.len != schema_ptr.columns.len) return error.ColumnCountMismatch;
+            // Store the row (dupe the array for storage)
+            const row = try self.allocator.dupe(Value, values.items);
+            try schema_ptr.rows.append(row);
+
+            // Log the INSERT operation to WAL
+            if (!self.is_recovering) {
+                const wal_data = try std.fmt.allocPrint(self.allocator, "INSERT:{s}:{s}", .{ table_name, query });
+                defer self.allocator.free(wal_data);
+                try self.wal.logTransaction(self.getNextTxnId(), wal_data);
+            }
+
+            // Return empty result set
             return try ResultSet.init(self.allocator, 0, 0);
         }
 
@@ -90,36 +186,115 @@ pub const OLAPDatabase = struct {
     /// Deinitialize the database
     pub fn deinit(self: *OLAPDatabase) void {
         std.debug.print("OLAPDatabase.deinit called\n", .{});
+
         // Free all table schemas
-        std.debug.print("Deinit table_schemas\n", .{});
+        std.debug.print("Starting table_schemas deinit, count: {}\n", .{self.table_schemas.count()});
         if (@hasField(@TypeOf(self.table_schemas), "deinit") and self.table_schemas.count() > 0) {
             var it = self.table_schemas.iterator();
+            var table_count: usize = 0;
             while (it.next()) |entry| {
+                table_count += 1;
+                std.debug.print("Deinit table {} (table_count: {})\n", .{ entry.key_ptr.*, table_count });
+
                 // Free the hash map key (table name)
+                std.debug.print("  Freeing table name: {s}\n", .{entry.key_ptr.*});
                 self.allocator.free(entry.key_ptr.*);
+                std.debug.print("  Table name freed\n", .{});
+
                 // Free the schema and its fields
                 const schema = entry.value_ptr.*;
+                std.debug.print("  Freeing schema name: {s}\n", .{schema.name});
                 self.allocator.free(schema.name);
-                for (schema.columns) |col| {
+                std.debug.print("  Schema name freed\n", .{});
+
+                std.debug.print("  Freeing {} columns\n", .{schema.columns.len});
+                for (schema.columns, 0..) |col, col_idx| {
+                    std.debug.print("    Freeing column {} name: {s}\n", .{ col_idx, col.name });
                     self.allocator.free(col.name);
+                    std.debug.print("    Freeing column {} type: {s}\n", .{ col_idx, col.data_type });
                     self.allocator.free(col.data_type);
+                    std.debug.print("    Column {} freed\n", .{col_idx});
                 }
+                std.debug.print("  Freeing columns array\n", .{});
                 self.allocator.free(schema.columns);
+                std.debug.print("  Columns array freed\n", .{});
+
+                // Free all rows in the table
+                std.debug.print("  Freeing {} rows\n", .{schema.rows.items.len});
+                for (schema.rows.items, 0..) |row, row_idx| {
+                    std.debug.print("    Freeing row {} with {} values\n", .{ row_idx, row.len });
+                    for (row, 0..) |*val, val_idx| {
+                        std.debug.print("      Freeing value {} in row {}\n", .{ val_idx, row_idx });
+                        val.deinit(self.allocator);
+                        std.debug.print("      Value {} in row {} freed\n", .{ val_idx, row_idx });
+                    }
+                    std.debug.print("    Freeing row {} array\n", .{row_idx});
+                    self.allocator.free(row);
+                    std.debug.print("    Row {} array freed\n", .{row_idx});
+                }
+                std.debug.print("  Deinit rows ArrayList\n", .{});
+                schema.rows.deinit();
+                std.debug.print("  Rows ArrayList deinit complete\n", .{});
+
+                std.debug.print("  Destroying schema\n", .{});
                 self.allocator.destroy(schema);
+                std.debug.print("  Schema destroyed\n", .{});
             }
+            std.debug.print("Deinit table_schemas HashMap\n", .{});
             self.table_schemas.deinit();
+            std.debug.print("table_schemas HashMap deinit complete\n", .{});
+        } else {
+            std.debug.print("table_schemas is empty or has no deinit method\n", .{});
         }
+
         std.debug.print("Deinit RocksDB\n", .{});
-        if (@intFromPtr(self.storage) != 0) self.storage.deinit();
+        if (@intFromPtr(self.storage) != 0) {
+            std.debug.print("  Calling storage.deinit()\n", .{});
+            self.storage.deinit();
+            std.debug.print("  storage.deinit() complete\n", .{});
+        } else {
+            std.debug.print("  storage is null, skipping\n", .{});
+        }
+
         std.debug.print("Deinit WAL\n", .{});
-        if (@intFromPtr(self.wal) != 0) self.wal.deinit();
+        if (@intFromPtr(self.wal) != 0) {
+            std.debug.print("  Calling wal.deinit()\n", .{});
+            self.wal.deinit();
+            std.debug.print("  wal.deinit() complete\n", .{});
+        } else {
+            std.debug.print("  wal is null, skipping\n", .{});
+        }
+
         std.debug.print("Deinit QueryPlanner\n", .{});
-        if (@intFromPtr(self.query_planner) != 0) self.query_planner.deinit();
+        if (@intFromPtr(self.query_planner) != 0) {
+            std.debug.print("  Calling query_planner.deinit()\n", .{});
+            self.query_planner.deinit();
+            std.debug.print("  query_planner.deinit() complete\n", .{});
+        } else {
+            std.debug.print("  query_planner is null, skipping\n", .{});
+        }
+
         std.debug.print("Deinit TxnManager\n", .{});
-        if (@intFromPtr(self.txn_manager) != 0) self.txn_manager.deinit();
+        if (@intFromPtr(self.txn_manager) != 0) {
+            std.debug.print("  Calling txn_manager.deinit()\n", .{});
+            self.txn_manager.deinit();
+            std.debug.print("  txn_manager.deinit() complete\n", .{});
+        } else {
+            std.debug.print("  txn_manager is null, skipping\n", .{});
+        }
+
         std.debug.print("Deinit DBContext\n", .{});
-        if (@intFromPtr(self.db_context) != 0) self.db_context.deinit();
+        if (@intFromPtr(self.db_context) != 0) {
+            std.debug.print("  Calling db_context.deinit()\n", .{});
+            self.db_context.deinit();
+            std.debug.print("  db_context.deinit() complete\n", .{});
+        } else {
+            std.debug.print("  db_context is null, skipping\n", .{});
+        }
+
+        std.debug.print("Destroying OLAPDatabase\n", .{});
         self.allocator.destroy(self);
+        std.debug.print("OLAPDatabase destroyed\n", .{});
     }
 
     /// Begin a transaction
@@ -342,17 +517,21 @@ pub const OLAPDatabase = struct {
 
     /// Create a table in the database
     pub fn createTable(self: *OLAPDatabase, table_name: []const u8, columns: []ColumnSchema) !void {
+        std.debug.print("[createTable] Called for table: {s} (recovering: {})\n", .{ table_name, self.is_recovering });
         if (self.table_schemas.get(table_name) != null) {
+            std.debug.print("[createTable] Table already exists: {s}\n", .{table_name});
             return error.TableAlreadyExists;
         }
         const schema = try self.allocator.create(TableSchema);
         schema.* = TableSchema{
             .name = try self.allocator.dupe(u8, table_name),
             .columns = try self.allocator.dupe(ColumnSchema, columns),
+            .rows = std.ArrayList([]Value).init(self.allocator),
         };
         // Store the table name as a key in the hash map (dupe it for the map)
         const key = try self.allocator.dupe(u8, table_name);
         try self.table_schemas.put(key, schema);
+        std.debug.print("[createTable] Table added to table_schemas: {s}\n", .{table_name});
     }
 };
 
@@ -394,11 +573,21 @@ pub fn init(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
 
 /// Recover a database after a crash
 pub fn recoverDatabase(allocator: std.mem.Allocator, data_dir: []const u8) !*OLAPDatabase {
+    std.debug.print("[RECOVERY] Starting database recovery from: {s}\\n", .{data_dir});
+
     // First initialize a new database
     var db = try init(allocator, data_dir);
+    std.debug.print("[RECOVERY] Database initialized, table_schemas count: {}\\n", .{db.table_schemas.count()});
 
     // Then recover from the WAL
+    std.debug.print("[RECOVERY] Calling WAL.recover()\\n", .{});
     try db.wal.recover();
+    std.debug.print("[RECOVERY] WAL.recover() completed, WAL transactions count: {}\\n", .{db.wal.transactions.count()});
+
+    // Recover table schemas and data from WAL
+    std.debug.print("[RECOVERY] Calling recoverFromWAL()\\n", .{});
+    try db.recoverFromWAL();
+    std.debug.print("[RECOVERY] recoverFromWAL() completed, table_schemas count: {}\\n", .{db.table_schemas.count()});
 
     return db;
 }

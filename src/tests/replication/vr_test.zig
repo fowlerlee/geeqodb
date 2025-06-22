@@ -1,8 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
-const Simulation = @import("simulation").Simulation;
-const VRNode = @import("simulation").scenarios.viewstamped_replication.VRNode;
-const ViewChangeStatus = @import("simulation").scenarios.viewstamped_replication.ViewChangeStatus;
+const Simulation = @import("../../simulation/simulation.zig").Simulation;
+const VRNode = @import("../../simulation/scenarios/viewstamped_replication.zig").VRNode;
+const ViewChangeStatus = @import("../../simulation/scenarios/viewstamped_replication.zig").ViewChangeStatus;
 
 // Unit tests for Viewstamped Replication implementation
 // These tests focus on the core functionality of the VR protocol
@@ -29,7 +29,7 @@ test "VRNode initialization" {
     }
 
     // Create a node
-    var node = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{});
+    var node = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{});
     defer {
         // Explicitly clean up resources
         node.log.clearAndFree();
@@ -70,7 +70,7 @@ test "VRNode becomes primary with no peers" {
     }
 
     // Create a node with no peers (should become primary)
-    var node = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{});
+    var node = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{});
     defer {
         // Explicitly clean up resources
         node.log.clearAndFree();
@@ -112,7 +112,7 @@ test "VRNode processes request as primary" {
     }
 
     // Create a node with no peers
-    var node = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{});
+    var node = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{});
     defer {
         // Explicitly clean up resources
         node.log.clearAndFree();
@@ -168,7 +168,7 @@ test "VRNode rejects request when not primary" {
     }
 
     // Create a node
-    var node = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{});
+    var node = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{});
     defer {
         // Explicitly clean up resources
         node.log.clearAndFree();
@@ -208,7 +208,7 @@ test "VRNode rejects request when inactive" {
     }
 
     // Create a node
-    var node = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{});
+    var node = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{});
     defer {
         // Explicitly clean up resources
         node.log.clearAndFree();
@@ -248,7 +248,7 @@ test "VRNode two-node replication" {
     }
 
     // Create two nodes
-    var node1 = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{"node2"});
+    var node1 = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{"node2"});
     defer {
         node1.log.clearAndFree();
         node1.start_view_change_acks.clearAndFree();
@@ -256,7 +256,7 @@ test "VRNode two-node replication" {
         node1.deinit();
     }
 
-    var node2 = try VRNode.init(allocator, &simulation, "node2", &[_][]const u8{"node1"});
+    var node2 = try VRNode.init(allocator, simulation, "node2", &[_][]const u8{"node1"});
     defer {
         node2.log.clearAndFree();
         node2.start_view_change_acks.clearAndFree();
@@ -328,7 +328,7 @@ test "VRNode view change" {
     }
 
     // Create three nodes
-    var node1 = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{ "node2", "node3" });
+    var node1 = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{ "node2", "node3" });
     defer {
         node1.log.clearAndFree();
         node1.start_view_change_acks.clearAndFree();
@@ -336,7 +336,7 @@ test "VRNode view change" {
         node1.deinit();
     }
 
-    var node2 = try VRNode.init(allocator, &simulation, "node2", &[_][]const u8{ "node1", "node3" });
+    var node2 = try VRNode.init(allocator, simulation, "node2", &[_][]const u8{ "node1", "node3" });
     defer {
         node2.log.clearAndFree();
         node2.start_view_change_acks.clearAndFree();
@@ -344,7 +344,7 @@ test "VRNode view change" {
         node2.deinit();
     }
 
-    var node3 = try VRNode.init(allocator, &simulation, "node3", &[_][]const u8{ "node1", "node2" });
+    var node3 = try VRNode.init(allocator, simulation, "node3", &[_][]const u8{ "node1", "node2" });
     defer {
         node3.log.clearAndFree();
         node3.start_view_change_acks.clearAndFree();
@@ -453,7 +453,7 @@ test "VRNode recovery" {
     }
 
     // Create three nodes
-    var node1 = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{ "node2", "node3" });
+    var node1 = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{ "node2", "node3" });
     defer {
         node1.log.clearAndFree();
         node1.start_view_change_acks.clearAndFree();
@@ -461,7 +461,7 @@ test "VRNode recovery" {
         node1.deinit();
     }
 
-    var node2 = try VRNode.init(allocator, &simulation, "node2", &[_][]const u8{ "node1", "node3" });
+    var node2 = try VRNode.init(allocator, simulation, "node2", &[_][]const u8{ "node1", "node3" });
     defer {
         node2.log.clearAndFree();
         node2.start_view_change_acks.clearAndFree();
@@ -469,7 +469,7 @@ test "VRNode recovery" {
         node2.deinit();
     }
 
-    var node3 = try VRNode.init(allocator, &simulation, "node3", &[_][]const u8{ "node1", "node2" });
+    var node3 = try VRNode.init(allocator, simulation, "node3", &[_][]const u8{ "node1", "node2" });
     defer {
         node3.log.clearAndFree();
         node3.start_view_change_acks.clearAndFree();
@@ -559,7 +559,7 @@ test "VRNode multiple operations" {
     }
 
     // Create three nodes
-    var node1 = try VRNode.init(allocator, &simulation, "node1", &[_][]const u8{ "node2", "node3" });
+    var node1 = try VRNode.init(allocator, simulation, "node1", &[_][]const u8{ "node2", "node3" });
     defer {
         node1.log.clearAndFree();
         node1.start_view_change_acks.clearAndFree();
@@ -567,7 +567,7 @@ test "VRNode multiple operations" {
         node1.deinit();
     }
 
-    var node2 = try VRNode.init(allocator, &simulation, "node2", &[_][]const u8{ "node1", "node3" });
+    var node2 = try VRNode.init(allocator, simulation, "node2", &[_][]const u8{ "node1", "node3" });
     defer {
         node2.log.clearAndFree();
         node2.start_view_change_acks.clearAndFree();
@@ -575,7 +575,7 @@ test "VRNode multiple operations" {
         node2.deinit();
     }
 
-    var node3 = try VRNode.init(allocator, &simulation, "node3", &[_][]const u8{ "node1", "node2" });
+    var node3 = try VRNode.init(allocator, simulation, "node3", &[_][]const u8{ "node1", "node2" });
     defer {
         node3.log.clearAndFree();
         node3.start_view_change_acks.clearAndFree();
