@@ -1,0 +1,3 @@
+[submodule "deps/pgzx"]
+	path = deps/pgzx
+	url = https://github.com/xataio/pgzx.git

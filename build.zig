@@ -40,18 +40,11 @@ pub fn build(b: *std.Build) void {
     distributed_wal_module.addImport("simulation", simulation_module);
     distributed_wal_module.addImport("replica_management", replica_management_module);
 
-    // Add RocksDB dependency
-    const rocksdb_lib = b.addStaticLibrary(.{
-        .name = "rocksdb",
-        .root_source_file = b.path("src/storage/rocksdb.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    rocksdb_lib.linkSystemLibrary("rocksdb");
+    // RocksDB dependency is handled directly in the modules that need it
 
     // Add tests for individual modules
     const planner_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/query/planner_test.zig"),
+        .path = b.path("src/tests/query/planner_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -59,7 +52,7 @@ pub fn build(b: *std.Build) void {
     planner_test.linkSystemLibrary("rocksdb");
 
     const executor_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/query/executor_test.zig"),
+        .path = b.path("src/tests/query/executor_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -67,7 +60,7 @@ pub fn build(b: *std.Build) void {
     executor_test.linkSystemLibrary("rocksdb");
 
     const advanced_planner_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/query/advanced_planner_test.zig"),
+        .path = b.path("src/tests/query/advanced_planner_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -75,21 +68,21 @@ pub fn build(b: *std.Build) void {
     advanced_planner_test.linkSystemLibrary("rocksdb");
 
     const gpu_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/gpu/gpu_test.zig"),
+        .path = b.path("src/tests/gpu/gpu_test.zig"),
         .target = target,
         .optimize = optimize,
     });
     gpu_test.root_module.addImport("geeqodb", geeqodb_module);
 
     const cuda_kernels_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/gpu/cuda_kernels_test.zig"),
+        .path = b.path("src/tests/gpu/cuda_kernels_test.zig"),
         .target = target,
         .optimize = optimize,
     });
     cuda_kernels_test.root_module.addImport("geeqodb", geeqodb_module);
 
     const rocksdb_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/storage/rocksdb_test.zig"),
+        .path = b.path("src/tests/storage/rocksdb_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -97,7 +90,7 @@ pub fn build(b: *std.Build) void {
     rocksdb_test.linkSystemLibrary("rocksdb");
 
     const database_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/core/database_test.zig"),
+        .path = b.path("src/tests/core/database_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -106,7 +99,7 @@ pub fn build(b: *std.Build) void {
 
     // Add replication tests
     const replica_management_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/replication/replica_management_test.zig"),
+        .path = b.path("src/tests/replication/replica_management_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -114,7 +107,7 @@ pub fn build(b: *std.Build) void {
     replica_management_test.root_module.addImport("replica_management", replica_management_module);
 
     const view_change_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/replication/view_change_test.zig"),
+        .path = b.path("src/tests/replication/view_change_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -124,7 +117,7 @@ pub fn build(b: *std.Build) void {
     view_change_test.root_module.addImport("view_change", view_change_module);
 
     const distributed_log_test = b.addTest(.{
-        .root_source_file = b.path("src/tests/replication/distributed_log_test.zig"),
+        .path = b.path("src/tests/replication/distributed_log_test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -132,6 +125,15 @@ pub fn build(b: *std.Build) void {
     distributed_log_test.root_module.addImport("simulation", simulation_module);
     distributed_log_test.root_module.addImport("replica_management", replica_management_module);
     distributed_log_test.root_module.addImport("distributed_wal", distributed_wal_module);
+
+    // Add PostgreSQL extension test
+    const postgres_extension_test = b.addTest(.{
+        .path = b.path("src/tests/integration/postgres_extension_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    postgres_extension_test.root_module.addImport("geeqodb", geeqodb_module);
+    postgres_extension_test.linkSystemLibrary("rocksdb");
 
     // Create test steps
     const run_planner_tests = b.addRunArtifact(planner_test);
@@ -164,6 +166,9 @@ pub fn build(b: *std.Build) void {
     const run_distributed_log_tests = b.addRunArtifact(distributed_log_test);
     run_distributed_log_tests.has_side_effects = true;
 
+    const run_postgres_extension_tests = b.addRunArtifact(postgres_extension_test);
+    run_postgres_extension_tests.has_side_effects = true;
+
     // Add test steps to the main test step
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_planner_tests.step);
@@ -176,6 +181,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_replica_management_tests.step);
     test_step.dependOn(&run_view_change_tests.step);
     test_step.dependOn(&run_distributed_log_tests.step);
+    test_step.dependOn(&run_postgres_extension_tests.step);
 
     // Add a separate step for database tests only
     const database_test_step = b.step("test-database", "Run database tests only");
@@ -200,12 +206,16 @@ pub fn build(b: *std.Build) void {
     replication_test_step.dependOn(&run_view_change_tests.step);
     replication_test_step.dependOn(&run_distributed_log_tests.step);
 
+    // Add a separate step for PostgreSQL extension tests only
+    const postgres_extension_test_step = b.step("test-postgres-extension", "Run PostgreSQL extension tests only");
+    postgres_extension_test_step.dependOn(&run_postgres_extension_tests.step);
+
     const tools_step = b.step("tools", "Build all tools in the src/tools directory");
 
     // Build main geeqodb executable
     const geeqodb_exe = b.addExecutable(.{
         .name = "geeqodb",
-        .root_source_file = b.path("server_main.zig"),
+        .path = b.path("server_main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -216,7 +226,7 @@ pub fn build(b: *std.Build) void {
     // Build SQL client tool
     const sql_client = b.addExecutable(.{
         .name = "sql_client",
-        .root_source_file = b.path("src/tools/sql_client.zig"),
+        .path = b.path("src/tools/sql_client.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -227,7 +237,7 @@ pub fn build(b: *std.Build) void {
     // Build example tools
     const query_example = b.addExecutable(.{
         .name = "query_example",
-        .root_source_file = b.path("src/examples/query_example.zig"),
+        .path = b.path("src/examples/query_example.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -239,7 +249,7 @@ pub fn build(b: *std.Build) void {
     // Build GPU benchmark tool
     const gpu_benchmark = b.addExecutable(.{
         .name = "gpu_benchmark",
-        .root_source_file = b.path("src/benchmarks/gpu_benchmark.zig"),
+        .path = b.path("src/benchmarks/gpu_benchmark.zig"),
         .target = target,
         .optimize = optimize,
     });

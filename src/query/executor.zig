@@ -218,16 +218,13 @@ pub const QueryExecutor = struct {
                 var result_set = try result.ResultSet.init(allocator, schema.columns.len, schema.rows.items.len);
                 for (schema.columns, 0..) |col, i| {
                     result_set.columns[i].name = try allocator.dupe(u8, col.name);
-                    // Map string type to DataType
-                    if (std.ascii.eqlIgnoreCase(col.data_type, "INT") or std.ascii.eqlIgnoreCase(col.data_type, "INTEGER")) {
-                        result_set.columns[i].data_type = .Int64;
-                    } else if (std.ascii.eqlIgnoreCase(col.data_type, "TEXT")) {
-                        result_set.columns[i].data_type = .String;
-                    } else if (std.ascii.eqlIgnoreCase(col.data_type, "FLOAT") or std.ascii.eqlIgnoreCase(col.data_type, "REAL")) {
-                        result_set.columns[i].data_type = .Float64;
-                    } else {
-                        result_set.columns[i].data_type = .String;
-                    }
+                    // Map enum type to DataType
+                    result_set.columns[i].data_type = switch (col.data_type) {
+                        .Int => .Int64,
+                        .Float => .Float64,
+                        .Text => .String,
+                        .Bool => .Bool,
+                    };
                 }
                 // Copy rows
                 for (schema.rows.items, 0..) |row, r| {

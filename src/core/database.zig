@@ -21,7 +21,38 @@ pub const TableSchema = struct {
 
 pub const ColumnSchema = struct {
     name: []const u8,
-    data_type: []const u8, // For now, store as string (e.g., "INT", "TEXT")
+    data_type: DataType,
+
+    pub const DataType = enum {
+        Int,
+        Float,
+        Text,
+        Bool,
+        // Add more types as needed
+
+        pub fn fromString(s: []const u8) ?DataType {
+            var buffer: [20]u8 = undefined;
+            const upper = std.ascii.upperString(&buffer, s);
+            if (std.mem.eql(u8, upper, "INT")) return .Int;
+            if (std.mem.eql(u8, upper, "INTEGER")) return .Int;
+            if (std.mem.eql(u8, upper, "FLOAT")) return .Float;
+            if (std.mem.eql(u8, upper, "REAL")) return .Float;
+            if (std.mem.eql(u8, upper, "TEXT")) return .Text;
+            if (std.mem.eql(u8, upper, "STRING")) return .Text;
+            if (std.mem.eql(u8, upper, "BOOL")) return .Bool;
+            if (std.mem.eql(u8, upper, "BOOLEAN")) return .Bool;
+            return null;
+        }
+
+        pub fn toString(self: DataType) []const u8 {
+            return switch (self) {
+                .Int => "INT",
+                .Float => "FLOAT",
+                .Text => "TEXT",
+                .Bool => "BOOL",
+            };
+        }
+    };
 };
 
 /// OLAP Database main structure
@@ -39,6 +70,7 @@ pub const OLAPDatabase = struct {
     pub const Error = error{
         TableNotFound,
         TableAlreadyExists,
+        InvalidDataType,
     };
 
     /// Get the next transaction ID
@@ -105,9 +137,10 @@ pub const OLAPDatabase = struct {
                 var parts = std.mem.tokenizeSequence(u8, col, " ");
                 const col_name = std.mem.trim(u8, parts.next() orelse return error.InvalidSyntax, &std.ascii.whitespace);
                 const col_type = std.mem.trim(u8, parts.next() orelse return error.InvalidSyntax, &std.ascii.whitespace);
+                const data_type = ColumnSchema.DataType.fromString(col_type) orelse return error.InvalidDataType;
                 try columns.append(ColumnSchema{
                     .name = try self.allocator.dupe(u8, col_name),
-                    .data_type = try self.allocator.dupe(u8, col_type),
+                    .data_type = data_type,
                 });
             }
             try self.createTable(table_name, columns.items);

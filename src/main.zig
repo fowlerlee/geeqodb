@@ -33,9 +33,7 @@ pub fn main() !void {
     std.debug.print("GeeqoDB - A high-performance OLAP database in Zig\n", .{});
 
     // Initialize allocator
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const allocator = std.heap.page_allocator;
 
     // Create data directory
     const data_dir = "data";
