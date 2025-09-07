@@ -44,72 +44,90 @@ pub fn build(b: *std.Build) void {
 
     // Add tests for individual modules
     const planner_test = b.addTest(.{
-        .path = b.path("src/tests/query/planner_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("planner_test", .{
+            .root_source_file = b.path("src/tests/query/planner_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     planner_test.root_module.addImport("geeqodb", geeqodb_module);
     planner_test.linkSystemLibrary("rocksdb");
 
     const executor_test = b.addTest(.{
-        .path = b.path("src/tests/query/executor_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("executor_test", .{
+            .root_source_file = b.path("src/tests/query/executor_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     executor_test.root_module.addImport("geeqodb", geeqodb_module);
     executor_test.linkSystemLibrary("rocksdb");
 
     const advanced_planner_test = b.addTest(.{
-        .path = b.path("src/tests/query/advanced_planner_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("advanced_planner_test", .{
+            .root_source_file = b.path("src/tests/query/advanced_planner_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     advanced_planner_test.root_module.addImport("geeqodb", geeqodb_module);
     advanced_planner_test.linkSystemLibrary("rocksdb");
 
     const gpu_test = b.addTest(.{
-        .path = b.path("src/tests/gpu/gpu_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("gpu_test", .{
+            .root_source_file = b.path("src/tests/gpu/gpu_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     gpu_test.root_module.addImport("geeqodb", geeqodb_module);
 
     const cuda_kernels_test = b.addTest(.{
-        .path = b.path("src/tests/gpu/cuda_kernels_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("cuda_kernels_test", .{
+            .root_source_file = b.path("src/tests/gpu/cuda_kernels_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     cuda_kernels_test.root_module.addImport("geeqodb", geeqodb_module);
 
     const rocksdb_test = b.addTest(.{
-        .path = b.path("src/tests/storage/rocksdb_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("rocksdb_test", .{
+            .root_source_file = b.path("src/tests/storage/rocksdb_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     rocksdb_test.root_module.addImport("geeqodb", geeqodb_module);
     rocksdb_test.linkSystemLibrary("rocksdb");
 
     const database_test = b.addTest(.{
-        .path = b.path("src/tests/core/database_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("database_test", .{
+            .root_source_file = b.path("src/tests/core/database_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     database_test.root_module.addImport("geeqodb", geeqodb_module);
     database_test.linkSystemLibrary("rocksdb");
 
     // Add replication tests
     const replica_management_test = b.addTest(.{
-        .path = b.path("src/tests/replication/replica_management_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("replica_management_test", .{
+            .root_source_file = b.path("src/tests/replication/replica_management_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     replica_management_test.root_module.addImport("geeqodb", geeqodb_module);
     replica_management_test.root_module.addImport("replica_management", replica_management_module);
 
     const view_change_test = b.addTest(.{
-        .path = b.path("src/tests/replication/view_change_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("view_change_test", .{
+            .root_source_file = b.path("src/tests/replication/view_change_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     view_change_test.root_module.addImport("geeqodb", geeqodb_module);
     view_change_test.root_module.addImport("simulation", simulation_module);
@@ -117,9 +135,11 @@ pub fn build(b: *std.Build) void {
     view_change_test.root_module.addImport("view_change", view_change_module);
 
     const distributed_log_test = b.addTest(.{
-        .path = b.path("src/tests/replication/distributed_log_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("distributed_log_test", .{
+            .root_source_file = b.path("src/tests/replication/distributed_log_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     distributed_log_test.root_module.addImport("geeqodb", geeqodb_module);
     distributed_log_test.root_module.addImport("simulation", simulation_module);
@@ -128,9 +148,11 @@ pub fn build(b: *std.Build) void {
 
     // Add PostgreSQL extension test
     const postgres_extension_test = b.addTest(.{
-        .path = b.path("src/tests/integration/postgres_extension_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("postgres_extension_test", .{
+            .root_source_file = b.path("src/tests/integration/postgres_extension_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     postgres_extension_test.root_module.addImport("geeqodb", geeqodb_module);
     postgres_extension_test.linkSystemLibrary("rocksdb");
@@ -215,9 +237,11 @@ pub fn build(b: *std.Build) void {
     // Build main geeqodb executable
     const geeqodb_exe = b.addExecutable(.{
         .name = "geeqodb",
-        .path = b.path("server_main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("geeqodb_exe", .{
+            .root_source_file = b.path("server_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     geeqodb_exe.root_module.addImport("geeqodb", geeqodb_module);
     geeqodb_exe.linkSystemLibrary("rocksdb");
@@ -226,9 +250,11 @@ pub fn build(b: *std.Build) void {
     // Build SQL client tool
     const sql_client = b.addExecutable(.{
         .name = "sql_client",
-        .path = b.path("src/tools/sql_client.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("sql_client", .{
+            .root_source_file = b.path("src/tools/sql_client.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     sql_client.root_module.addImport("geeqodb", geeqodb_module);
     b.installArtifact(sql_client);
@@ -237,9 +263,11 @@ pub fn build(b: *std.Build) void {
     // Build example tools
     const query_example = b.addExecutable(.{
         .name = "query_example",
-        .path = b.path("src/examples/query_example.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("query_example", .{
+            .root_source_file = b.path("src/examples/query_example.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     query_example.root_module.addImport("geeqodb", geeqodb_module);
     query_example.linkSystemLibrary("rocksdb");
@@ -249,9 +277,11 @@ pub fn build(b: *std.Build) void {
     // Build GPU benchmark tool
     const gpu_benchmark = b.addExecutable(.{
         .name = "gpu_benchmark",
-        .path = b.path("src/benchmarks/gpu_benchmark.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.addModule("gpu_benchmark", .{
+            .root_source_file = b.path("src/benchmarks/gpu_benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     gpu_benchmark.root_module.addImport("geeqodb", geeqodb_module);
     gpu_benchmark.linkSystemLibrary("rocksdb");

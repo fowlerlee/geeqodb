@@ -181,7 +181,8 @@ pub const WAL = struct {
             return;
         }
 
-        var reader = file.reader();
+        var buffer: [4096]u8 = undefined;
+        var reader = file.reader(&file, &buffer);
 
         // Clear existing transactions
         std.debug.print("[WAL] recover() clearing existing transactions\\n", .{});
