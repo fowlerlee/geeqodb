@@ -42,7 +42,7 @@ pub fn main() !void {
     const address = try std.net.Address.parseIp(host, port);
     var stream = std.net.tcpConnectToAddress(address) catch |err| {
         std.debug.print("Error connecting to server: {}\n", .{err});
-        std.debug.print("Make sure the server is running at {s}:{d}\n", .{host, port});
+        std.debug.print("Make sure the server is running at {s}:{d}\n", .{ host, port });
         return err;
     };
     defer stream.close();
@@ -51,10 +51,8 @@ pub fn main() !void {
     std.debug.print("Type SQL queries and press Enter to execute them.\n", .{});
     std.debug.print("Type 'exit' or 'quit' to exit.\n\n", .{});
 
-    // Create stdin reader
-    const stdin = std.io.getStdIn().reader();
-    var stdin_buf = std.io.bufferedReader(stdin);
-    var stdin_reader = stdin_buf.reader();
+    // Create stdin reader using new Zig 0.15 streaming format
+    var stdin_stream = std.fs.File.stdin().readerStreaming(&.{});
 
     // Create buffer for user input
     var input_buffer: [4096]u8 = undefined;
@@ -64,18 +62,19 @@ pub fn main() !void {
         // Display prompt
         std.debug.print("sql> ", .{});
 
-        // Read user input
-        const input = stdin_reader.readUntilDelimiterOrEof(&input_buffer, '\n') catch |err| {
+        // Read user input using new streaming interface
+        const input = stdin_stream.interface.readUntilDelimiterOrEof(&input_buffer, '\n') catch |err| {
             std.debug.print("Error reading input: {}\n", .{err});
             continue;
-        } orelse {
+        };
+        if (input.eof()) {
             std.debug.print("End of input, exiting.\n", .{});
             break;
-        };
+        }
 
         // Trim whitespace
-        const query = std.mem.trim(u8, input, &std.ascii.whitespace);
-
+        const query = std.mem.trim(u8, input.slice(), &std.ascii.whitespace);
+        defer input.deinit();
         // Check for exit command
         if (std.mem.eql(u8, query, "exit") or std.mem.eql(u8, query, "quit")) {
             std.debug.print("Exiting.\n", .{});
